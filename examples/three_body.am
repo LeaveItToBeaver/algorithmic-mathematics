@@ -1,0 +1,6 @@
+@ThreeBodySolver⟦m,r,v⟧ → trajectory:ℝ ≝
+  @Classify(Energy, L) → [
+    Stable ? @KeplerSolver;
+    Chaotic ? @MonteCarlo ⦁⊕ @LyapunovFilter;
+    _ ? @Error
+  ]

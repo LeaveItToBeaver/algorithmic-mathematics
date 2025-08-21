@@ -1,0 +1,7 @@
+
+@SafeDiv⟦a:ℝ, b:ℝ⟧ → result:ℝ ≝
+  [ b ≠ 0 ? a/b;
+    b = 0 ∧ a > 0 ? ∞;
+    b = 0 ∧ a < 0 ? -∞;
+    _ ? NaN
+  ]
