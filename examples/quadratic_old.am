@@ -1,0 +1,19 @@
+@Quadratic⟦a:ℝ, b:ℝ, c:ℝ⟧ → [ℝ] ≝
+  [ d = b² - 4×a×c;
+    d > 0 ? @TwoRealRoots⟦a, b, d⟧;
+    d = 0 ? @OneRoot⟦a, b⟧;
+    _ ? @ComplexRoots⟦a, b, d⟧
+  ]
+
+@TwoRealRoots⟦a:ℝ, b:ℝ, d:ℝ⟧ → [ℝ] ≝
+  [ (-b + √⟦d⟧) / (2×a),
+    (-b - √⟦d⟧) / (2×a)
+  ]
+
+@OneRoot⟦a:ℝ, b:ℝ⟧ → [ℝ] ≝
+  [ -b / (2×a) ]
+
+@ComplexRoots⟦a:ℝ, b:ℝ, d:ℝ⟧ → [ℂ] ≝
+  [ (-b + √⟦d⟧) / (2×a),
+    (-b - √⟦d⟧) / (2×a)
+  ]
