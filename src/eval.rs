@@ -1,3 +1,4 @@
+use core::f64;
 // src/eval.rs
 use std::collections::HashMap;
 
@@ -52,6 +53,9 @@ impl Env {
         let mut vars = HashMap::new();
         vars.insert("inf".to_string(), Value::Number(f64::INFINITY));
         vars.insert("NaN".to_string(), Value::Number(f64::NAN));
+        vars.insert("pi".to_string(), Value::Number(std::f64::consts::PI));
+        vars.insert("e".to_string(), Value::Number(std::f64::consts::E));
+        vars.insert("tau".to_string(), Value::Number(std::f64::consts::TAU));
         Self { vars }
     }
     fn get(&self, name: &str) -> Option<&Value> {
@@ -108,6 +112,67 @@ fn call_name<'a>(
             }
             Ok(Value::Number(vals[0].as_f64()?.abs()))
         }
+        // ADD these new functions:
+        "sin" => {
+            if vals.len() != 1 {
+                return Err(format!("sin expects 1 arg, got {}", vals.len()));
+            }
+            Ok(Value::Number(vals[0].as_f64()?.sin()))
+        }
+        "cos" => {
+            if vals.len() != 1 {
+                return Err(format!("cos expects 1 arg, got {}", vals.len()));
+            }
+            Ok(Value::Number(vals[0].as_f64()?.cos()))
+        }
+        "tan" => {
+            if vals.len() != 1 {
+                return Err(format!("tan expects 1 arg, got {}", vals.len()));
+            }
+            Ok(Value::Number(vals[0].as_f64()?.tan()))
+        }
+        "log" => {
+            if vals.len() != 1 {
+                return Err(format!("log expects 1 arg, got {}", vals.len()));
+            }
+            Ok(Value::Number(vals[0].as_f64()?.ln()))
+        }
+        "log10" => {
+            if vals.len() != 1 {
+                return Err(format!("log10 expects 1 arg, got {}", vals.len()));
+            }
+            Ok(Value::Number(vals[0].as_f64()?.log10()))
+        }
+        "floor" => {
+            if vals.len() != 1 {
+                return Err(format!("floor expects 1 arg, got {}", vals.len()));
+            }
+            Ok(Value::Number(vals[0].as_f64()?.floor()))
+        }
+        "ceil" => {
+            if vals.len() != 1 {
+                return Err(format!("ceil expects 1 arg, got {}", vals.len()));
+            }
+            Ok(Value::Number(vals[0].as_f64()?.ceil()))
+        }
+        "round" => {
+            if vals.len() != 1 {
+                return Err(format!("round expects 1 arg, got {}", vals.len()));
+            }
+            Ok(Value::Number(vals[0].as_f64()?.round()))
+        }
+        "min" => {
+            if vals.len() != 2 {
+                return Err(format!("min expects 2 args, got {}", vals.len()));
+            }
+            Ok(Value::Number(vals[0].as_f64()?.min(vals[1].as_f64()?)))
+        }
+        "max" => {
+            if vals.len() != 2 {
+                return Err(format!("max expects 2 args, got {}", vals.len()));
+            }
+            Ok(Value::Number(vals[0].as_f64()?.max(vals[1].as_f64()?)))
+        }
         _ => Err(format!("unknown function: {}", name)),
     }
 }
@@ -140,6 +205,8 @@ pub fn eval_expr<'a>(world: &World<'a>, env: &mut Env, e: &Expr) -> Result<Value
                 Sub => Ok(Value::Number(lv.as_f64()? - rv.as_f64()?)),
                 Mul => Ok(Value::Number(lv.as_f64()? * rv.as_f64()?)),
                 Div => Ok(Value::Number(lv.as_f64()? / rv.as_f64()?)),
+                Pow => Ok(Value::Number(lv.as_f64()?.powf(rv.as_f64()?))),
+                Mod => Ok(Value::Number(lv.as_f64()? % rv.as_f64()?)),
                 Eq => Ok(Value::Bool(num_eq(lv.as_f64()?, rv.as_f64()?))),
                 Ne => Ok(Value::Bool(!num_eq(lv.as_f64()?, rv.as_f64()?))),
                 Lt => Ok(Value::Bool(lv.as_f64()? < rv.as_f64()?)),

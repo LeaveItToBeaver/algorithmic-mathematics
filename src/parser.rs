@@ -1,19 +1,40 @@
 // src/parser.rs
 use crate::ast::{AlgorithmDef, BinOp, Expr, UnOp};
-use crate::token::{TokSpan, Token};
+use crate::token::{TokSpan, Token, caret_message};
 
-pub struct Tokens {
+pub struct Tokens<'a> {
     items: Vec<TokSpan>,
     pos: usize,
+    src: &'a str, // NEW: keep the source for caret messages
 }
 
-impl Tokens {
-    pub fn new(items: Vec<TokSpan>) -> Self {
-        Self { items, pos: 0 }
+impl<'a> Tokens<'a> {
+    pub fn new_with_src(items: Vec<TokSpan>, src: &'a str) -> Self {
+        Self { items, pos: 0, src }
     }
+    // keep old constructor for callers that don't have src (or delete it)
+    pub fn new(items: Vec<TokSpan>) -> Self {
+        Self {
+            items,
+            pos: 0,
+            src: "",
+        }
+    }
+
     pub fn peek(&self) -> Option<&Token> {
         self.items.get(self.pos).map(|t| &t.tok)
     }
+    fn peek_span(&self) -> Option<&TokSpan> {
+        self.items.get(self.pos)
+    }
+    fn last_span(&self) -> Option<&TokSpan> {
+        if self.pos == 0 {
+            None
+        } else {
+            self.items.get(self.pos - 1)
+        }
+    }
+
     fn next(&mut self) -> Option<Token> {
         if self.pos >= self.items.len() {
             None
@@ -34,8 +55,25 @@ impl Tokens {
     }
     fn expect(&mut self, want: &Token, ctx: &str) {
         if !self.eat(want) {
-            panic!("expected {:?} while parsing {}", want, ctx);
+            let byte = self
+                .peek_span()
+                .map(|s| s.start)
+                .or_else(|| self.last_span().map(|s| s.end))
+                .unwrap_or(0);
+            let msg = format!("expected {:?} while parsing {}", want, ctx);
+            let pretty = caret_message(self.src, byte, &msg);
+            panic!("{}", pretty);
         }
+    }
+
+    fn err_here<T>(&self, msg: &str) -> T {
+        let byte = self
+            .peek_span()
+            .map(|s| s.start)
+            .or_else(|| self.last_span().map(|s| s.end))
+            .unwrap_or(0);
+        let pretty = caret_message(self.src, byte, msg);
+        panic!("{}", pretty);
     }
 }
 
@@ -44,7 +82,7 @@ pub fn parse_alg_def(ts: &mut Tokens) -> AlgorithmDef {
     ts.expect(&Token::At, "algorithm start '@'");
     let name = match ts.next() {
         Some(Token::Ident(s)) => s,
-        other => panic!("expected identifier after '@', got {:?}", other),
+        other => ts.err_here(&format!("expected identifier after '@', got {:?}", other)),
     };
     ts.expect(&Token::LParen, "parameter list '('");
     let mut params = Vec::new();
@@ -92,7 +130,7 @@ fn parse_case(ts: &mut Tokens) -> Expr {
                 let rhs = parse_expr(ts);
                 default = Some(rhs);
             } else {
-                panic!("expected '?' or '->' after '_' in case arm");
+                ts.err_here::<()>("expected '?' or '->' after '_' in case arm");
             }
         } else {
             // cond ? expr [ '|' expr ]   OR   cond -> expr
@@ -117,7 +155,7 @@ fn parse_case(ts: &mut Tokens) -> Expr {
                 let rhs = parse_expr(ts);
                 arms.push((cond, rhs));
             } else {
-                panic!("expected '?' or '->' after condition in case arm");
+                ts.err_here::<()>("expected '?' or '->' after condition in case arm");
             }
         }
 
@@ -235,12 +273,12 @@ fn parse_add(ts: &mut Tokens) -> Expr {
 }
 
 fn parse_mul(ts: &mut Tokens) -> Expr {
-    let mut node = parse_unary(ts);
+    let mut node = parse_pow(ts);
     loop {
         match ts.peek() {
             Some(Token::Star) => {
                 ts.next();
-                let rhs = parse_unary(ts);
+                let rhs = parse_pow(ts);
                 node = Expr::Bin {
                     op: BinOp::Mul,
                     left: Box::new(node),
@@ -249,14 +287,37 @@ fn parse_mul(ts: &mut Tokens) -> Expr {
             }
             Some(Token::Slash) => {
                 ts.next();
-                let rhs = parse_unary(ts);
+                let rhs = parse_pow(ts);
                 node = Expr::Bin {
                     op: BinOp::Div,
                     left: Box::new(node),
                     right: Box::new(rhs),
                 };
             }
+            Some(Token::Percent) => {
+                ts.next();
+                let rhs = parse_pow(ts);
+                node = Expr::Bin {
+                    op: BinOp::Mod,
+                    left: Box::new(node),
+                    right: Box::new(rhs),
+                }
+            }
             _ => break,
+        }
+    }
+    node
+}
+
+fn parse_pow(ts: &mut Tokens) -> Expr {
+    let mut node = parse_unary(ts);
+    if let Some(Token::Caret) = ts.peek() {
+        ts.next();
+        let rhs = parse_pow(ts);
+        node = Expr::Bin {
+            op: BinOp::Pow,
+            left: Box::new(node),
+            right: Box::new(rhs),
         }
     }
     node
@@ -286,7 +347,7 @@ fn parse_postfix(ts: &mut Tokens) -> Expr {
         Some(Token::Number(s)) => {
             let v: f64 = s
                 .parse()
-                .unwrap_or_else(|_| panic!("bad number literal: {}", s));
+                .unwrap_or_else(|_| ts.err_here(&format!("bad number literal: {}", s)));
             Expr::Number(v)
         }
         Some(Token::Bool(b)) => Expr::Bool(b),
@@ -295,7 +356,7 @@ fn parse_postfix(ts: &mut Tokens) -> Expr {
             // @Name must be followed by ident
             let name = match ts.next() {
                 Some(Token::Ident(s)) => s,
-                other => panic!("expected identifier after '@', got {:?}", other),
+                other => ts.err_here(&format!("expected identifier after '@', got {:?}", other)),
             };
             // If followed by '(', this will be handled below as a call
             Expr::Call {
@@ -308,10 +369,10 @@ fn parse_postfix(ts: &mut Tokens) -> Expr {
             let e = parse_expr(ts);
             match ts.next() {
                 Some(Token::RParen) => e,
-                other => panic!("expected ')', got {:?}", other),
+                other => ts.err_here(&format!("expected ')', got {:?}", other)),
             }
         }
-        other => panic!("unexpected token in expression: {:?}", other),
+        other => ts.err_here(&format!("unexpected token in expression: {:?}", other)),
     };
 
     // Postfix: function calls after names or @Name
@@ -348,7 +409,7 @@ fn parse_postfix(ts: &mut Tokens) -> Expr {
                         name,
                         args,
                     },
-                    other => panic!("cannot call non-name expression: {:?}", other),
+                    other => ts.err_here(&format!("cannot call non-name expression: {:?}", other)),
                 };
             }
             _ => break,

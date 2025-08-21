@@ -1,0 +1,14 @@
+@Square(x) = x^2
+@Cube(x) = x^3
+@Pythagoras(a, b) = sqrt(a^2 + b^2)
+@CircleArea(r) = pi * r^2
+@Degrees(radians) = radians * 180 / pi
+@Radians(degrees) = degrees * pi / 180
+
+@QuadraticDiscriminant(a, b, c) = b^2 - 4*a*c
+
+@QuadraticRoots(a, b, c) = 
+  [ @QuadraticDiscriminant(a, b, c) >= 0 ? 
+      [(-b + sqrt(@QuadraticDiscriminant(a, b, c)))/(2*a),
+       (-b - sqrt(@QuadraticDiscriminant(a, b, c)))/(2*a)] ;
+    _ ? NaN ]

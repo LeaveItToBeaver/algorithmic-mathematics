@@ -17,7 +17,6 @@ pub enum Token {
     DblPipe,
     DblAmp,
     DblGt,
-    // arithmetic / compare
     Plus,
     Minus,
     Star,
@@ -30,12 +29,15 @@ pub enum Token {
     Lt,
     Gt,
     Bang,
-    // literals / identifiers
     Ident(String),
     Number(String),
     Bool(bool),
+    String(String),
+
     // unknown
     Error(String),
+
+    Caret,
 }
 
 #[allow(dead_code)]
@@ -50,7 +52,7 @@ pub fn span(tok: Token, start: usize, end: usize) -> TokSpan {
     TokSpan { tok, start, end }
 }
 
-fn caret_message(src: &str, byte: usize, msg: &str) -> String {
+pub fn caret_message(src: &str, byte: usize, msg: &str) -> String {
     let mut line = 1usize;
     let mut col = 1usize;
     let mut last_nl = 0usize;

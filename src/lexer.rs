@@ -168,10 +168,59 @@ pub fn lex(input: &str) -> Vec<TokSpan> {
                 i += 1;
                 continue;
             }
+            '^' => {
+                out.push(span(Token::Caret, i, i + 1));
+                i += 1;
+                continue;
+            }
             _ => {}
         }
 
         let ch = bytes[i] as char;
+
+        if (bytes[i] as char) == '"' {
+            let start = i;
+            i += 1; // skip opening quote
+            let mut s = String::new();
+            while i < len {
+                let ch = bytes[i] as char;
+                i += 1;
+                if ch == '"' {
+                    // closing quote
+                    out.push(span(Token::String(s), start, i));
+                    break;
+                }
+                if ch == '\\' && i < len {
+                    let esc = bytes[i] as char;
+                    i += 1;
+                    match esc {
+                        '\\' => s.push('\\'),
+                        '"' => s.push('"'),
+                        'n' => s.push('\n'),
+                        't' => s.push('\t'),
+                        'r' => s.push('\r'),
+                        _ => s.push(esc),
+                    }
+                } else {
+                    s.push(ch);
+                }
+            }
+            // if we fell out without hitting a closing '"', emit an Error token
+            if let Some(TokSpan {
+                tok: Token::String(_),
+                ..
+            }) = out.last()
+            {
+                // ok
+            } else {
+                out.push(span(
+                    Token::Error("unterminated string literal".into()),
+                    start,
+                    i,
+                ));
+            }
+            continue;
+        }
 
         // identifier / keyword
         if is_ident_start(ch) {
