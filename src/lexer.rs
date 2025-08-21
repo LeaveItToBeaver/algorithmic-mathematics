@@ -7,6 +7,44 @@ fn is_ident_continue(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_'
 }
 
+fn peek2(bytes: &[u8], i: usize) -> Option<(char, char)> {
+    if i + 1 >= bytes.len() {
+        None
+    } else {
+        Some((bytes[i] as char, bytes[i + 1] as char))
+    }
+}
+
+fn consume_block_comment(bytes: &[u8], start_star: usize) -> usize {
+    let len = bytes.len();
+    let mut i = start_star + 1; // move to the char after the first '*'
+    let mut depth = 1usize;
+
+    while i < len {
+        let c = bytes[i] as char;
+
+        // open nested block: "/*"
+        if c == '/' && i + 1 < len && (bytes[i + 1] as char) == '*' {
+            depth += 1;
+            i += 2;
+            continue;
+        }
+        // close one block: "*/"
+        if c == '*' && i + 1 < len && (bytes[i + 1] as char) == '/' {
+            depth -= 1;
+            i += 2;
+            if depth == 0 {
+                return i; // index right after the closing "*/"
+            }
+            continue;
+        }
+
+        i += 1; // advance normally
+    }
+
+    // Unterminated: just return len so caller stops lexing
+    len
+}
 pub fn lex(input: &str) -> Vec<TokSpan> {
     let bytes = input.as_bytes();
     let len = bytes.len();
@@ -67,6 +105,23 @@ pub fn lex(input: &str) -> Vec<TokSpan> {
                     continue;
                 }
                 _ => {}
+            }
+        }
+
+        // comments
+        if let Some((a, c)) = peek2(bytes, i) {
+            if a == '/' && c == '/' {
+                // // line comment: skip until newline
+                i += 2;
+                while i < len && (bytes[i] as char) != '\n' {
+                    i += 1;
+                }
+                continue;
+            }
+            if a == '/' && c == '*' {
+                // /* block comment (nested) */
+                i = consume_block_comment(bytes, i + 1); // pass index at '*'
+                continue;
             }
         }
 

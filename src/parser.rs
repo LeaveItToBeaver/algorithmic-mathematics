@@ -11,15 +11,6 @@ impl<'a> Tokens<'a> {
     pub fn new_with_src(items: Vec<TokSpan>, src: &'a str) -> Self {
         Self { items, pos: 0, src }
     }
-    // keep old constructor for callers that don't have src (or delete it)
-    pub fn new(items: Vec<TokSpan>) -> Self {
-        Self {
-            items,
-            pos: 0,
-            src: "",
-        }
-    }
-
     pub fn peek(&self) -> Option<&Token> {
         self.items.get(self.pos).map(|t| &t.tok)
     }

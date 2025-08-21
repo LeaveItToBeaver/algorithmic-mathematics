@@ -2,8 +2,8 @@ use std::env;
 use std::fs;
 use std::panic::AssertUnwindSafe;
 
-use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
+use rustyline::error::ReadlineError;
 
 mod ast;
 mod eval;
@@ -106,6 +106,11 @@ fn main() {
             // normalize → lex → parse
             let normalized = normalize_unicode_to_ascii(input);
             let tokens = lex(&normalized);
+
+            if tokens.is_empty() {
+                continue;
+            }
+
             let mut ts = Tokens::new_with_src(tokens, &normalized);
 
             if input.starts_with('@') {
@@ -139,8 +144,8 @@ fn main() {
                         let mut env = Env::base();
                         match eval_expr(&world, &mut env, &expr) {
                             Ok(Value::Number(n)) => println!("= {}", n),
-                            Ok(Value::Bool(b))   => println!("= {}", b),
-                            Err(e)               => eprintln!("runtime error: {e}"),
+                            Ok(Value::Bool(b)) => println!("= {}", b),
+                            Err(e) => eprintln!("runtime error: {e}"),
                         }
                     }
                     Err(e) => {
