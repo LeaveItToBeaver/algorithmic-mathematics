@@ -1,4 +1,3 @@
-// src/main.rs
 mod ast;
 mod eval;
 mod lexer;
