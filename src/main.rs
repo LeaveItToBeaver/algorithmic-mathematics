@@ -171,7 +171,7 @@ fn main() {
 
     let src = normalize_unicode_to_ascii(&src_raw);
     let tokens = lex(&src);
-    let mut ts = parser::Tokens::new_with_src(tokens, &src);
+    let mut ts = Tokens::new_with_src(tokens, &src);
     let defs = parse_all_defs(&mut ts);
 
     // Default: print first def AST if no flags given
@@ -218,10 +218,10 @@ fn main() {
         // Parse the call expression using the same lexer/parser
         let norm = normalize_unicode_to_ascii(&call_src);
         let toks = lex(&norm);
-        let mut t2 = parser::Tokens::new_with_src(toks, &src);
+        let mut t2 = Tokens::new_with_src(toks, &src);
 
         // We allow either Name(args) or @Name(args) for convenience
-        let call = parser::parse_expr(&mut t2);
+        let call = parse_expr(&mut t2);
 
         // Evaluate it in a world that knows our algorithm defs
         let world = World::new(&defs);
