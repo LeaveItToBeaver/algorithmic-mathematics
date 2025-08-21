@@ -1,3 +1,10 @@
+use std::env;
+use std::fs;
+use std::panic::AssertUnwindSafe;
+
+use rustyline::error::ReadlineError;
+use rustyline::DefaultEditor;
+
 mod ast;
 mod eval;
 mod lexer;
@@ -5,19 +12,11 @@ mod normalize;
 mod parser;
 mod token;
 
-use std::env;
-use std::fs;
-use std::io::Write;
-use std::panic::AssertUnwindSafe;
-
 use ast::{AlgorithmDef, show_expr};
 use eval::{Env, Value, World, eval_expr};
 use lexer::lex;
 use normalize::normalize_unicode_to_ascii;
-use parser::{Tokens, parse_alg_def};
-
-use crate::ast::Expr;
-use crate::parser::parse_expr;
+use parser::{Tokens, parse_alg_def, parse_expr};
 
 fn parse_all_defs(tokens: &mut Tokens) -> Vec<AlgorithmDef> {
     let mut defs = Vec::new();
@@ -33,47 +32,94 @@ fn parse_all_defs(tokens: &mut Tokens) -> Vec<AlgorithmDef> {
     defs
 }
 
-// let res = panic::catch_unwind(|| {
-//     let mut ts = parser::Tokens::new(tokens);
-//     parse_all_defs(&mut ts);
-// });
-
-// let defs = match res {
-//     Ok(d) => d,
-//     Err(_) => {
-//         let err_at =
-//     }
-// }
-
 fn main() {
     let mut args = env::args().skip(1).collect::<Vec<_>>();
+
+    // If no arguments provided, start REPL mode
     if args.is_empty() {
         println!("AM Language REPL v0.1.0");
-        print!("Type 'exit' to quiit");
+        println!("Type ':help' for commands, 'exit' to quit");
 
-        let mut world_defs = Vec::new();
+        let mut world_defs: Vec<AlgorithmDef> = Vec::new();
+
+        let mut rl = match DefaultEditor::new() {
+            Ok(ed) => ed,
+            Err(e) => {
+                eprintln!("Failed to start line editor: {e}");
+                std::process::exit(1);
+            }
+        };
+
+        let _ = rl.load_history(".amlang_history");
 
         loop {
-            print!("> ");
-            std::io::stdout().flush().unwrap();
+            let line = match rl.readline("repl> ") {
+                Ok(s) => s,
+                Err(ReadlineError::Interrupted) => {
+                    println!("Ctrl-C pressed, exiting...");
+                    break;
+                }
+                Err(ReadlineError::Eof) => {
+                    println!("Ctrl-D pressed, exiting...");
+                    break;
+                }
+                Err(e) => {
+                    eprintln!("Error reading line: {e}");
+                    continue;
+                }
+            };
 
-            let mut input = String::new();
-            std::io::stdin().read_line(&mut input).unwrap();
-
-            if input.trim() == "exit" {
-                break;
+            let input = line.trim();
+            if input.is_empty() {
+                continue; // skip empty lines
             }
 
-            let normalized = normalize_unicode_to_ascii(&input);
+            rl.add_history_entry(input).ok();
+
+            if input == "exit" || input == ":q" || input == ":quit" {
+                break;
+            }
+            if input == ":help" {
+                println!("Commands:");
+                println!("  :help        show this help");
+                println!("  :list        list defined algorithms");
+                println!("  :reset       clear all definitions");
+                println!("  exit, :q     quit");
+                continue;
+            }
+            if input == ":list" {
+                if world_defs.is_empty() {
+                    println!("<no algorithms defined>");
+                } else {
+                    for d in &world_defs {
+                        println!("{}({})", d.name, d.params.join(", "));
+                    }
+                }
+                continue;
+            }
+            if input == ":reset" {
+                world_defs.clear();
+                println!("Definitions cleared.");
+                continue;
+            }
+
+            // normalize → lex → parse
+            let normalized = normalize_unicode_to_ascii(input);
             let tokens = lex(&normalized);
             let mut ts = Tokens::new_with_src(tokens, &normalized);
 
-            if input.trim_start().starts_with('@') {
-                // Try to parse as algorithm definition
+            if input.starts_with('@') {
+                // algorithm definition
                 match std::panic::catch_unwind(AssertUnwindSafe(|| parse_alg_def(&mut ts))) {
                     Ok(def) => {
-                        println!("Defined: {}({})", def.name, def.params.join(", "));
-                        world_defs.push(def);
+                        // replace if same name already exists
+                        if let Some(pos) = world_defs.iter().position(|d| d.name == def.name) {
+                            world_defs[pos] = def;
+                        } else {
+                            world_defs.push(def);
+                        }
+                        let d = world_defs.last().unwrap();
+                        println!("Defined: {}({})", d.name, d.params.join(", "));
                     }
                     Err(e) => {
                         if let Some(msg) = e.downcast_ref::<String>() {
@@ -81,19 +127,20 @@ fn main() {
                         } else if let Some(msg) = e.downcast_ref::<&str>() {
                             eprintln!("{msg}");
                         } else {
-                            eprintln!("parse error");
+                            eprintln!("Error: invalid algorithm definition");
                         }
                     }
                 }
             } else {
+                // expression
                 match std::panic::catch_unwind(AssertUnwindSafe(|| parse_expr(&mut ts))) {
                     Ok(expr) => {
                         let world = World::new(&world_defs);
                         let mut env = Env::base();
                         match eval_expr(&world, &mut env, &expr) {
                             Ok(Value::Number(n)) => println!("= {}", n),
-                            Ok(Value::Bool(b)) => println!("= {}", b),
-                            Err(e) => println!("Error: {}", e),
+                            Ok(Value::Bool(b))   => println!("= {}", b),
+                            Err(e)               => eprintln!("runtime error: {e}"),
                         }
                     }
                     Err(e) => {
@@ -102,16 +149,19 @@ fn main() {
                         } else if let Some(msg) = e.downcast_ref::<&str>() {
                             eprintln!("{msg}");
                         } else {
-                            eprintln!("parse error");
+                            eprintln!("Error: invalid expression");
                         }
                     }
                 }
             }
         }
-    } else {
-        eprintln!("Usage: amlang <file.am> [--ast] [--call \"AlgName(1,2)\"]");
-        std::process::exit(2);
+
+        // save history (ignore errors)
+        let _ = rl.save_history(".amlang_history");
+        return;
     }
+
+    // File processing mode - arguments provided
     let path = args.remove(0);
 
     let src_raw = fs::read_to_string(&path).unwrap_or_else(|e| {
@@ -128,7 +178,7 @@ fn main() {
     let mut print_ast = false;
     let mut call_expr: Option<String> = None;
 
-    // Scrape remaining flags
+    // Parse remaining flags
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
