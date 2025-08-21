@@ -1,4 +1,3 @@
-// src/lexer.rs
 use crate::token::{TokSpan, Token, span};
 
 fn is_ident_start(c: char) -> bool {

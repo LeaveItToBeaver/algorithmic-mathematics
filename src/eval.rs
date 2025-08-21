@@ -1,5 +1,4 @@
 use core::f64;
-// src/eval.rs
 use std::collections::HashMap;
 
 use crate::ast::{AlgorithmDef, BinOp, Expr, UnOp};

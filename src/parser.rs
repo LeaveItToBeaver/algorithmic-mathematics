@@ -1,4 +1,3 @@
-// src/parser.rs
 use crate::ast::{AlgorithmDef, BinOp, Expr, UnOp};
 use crate::token::{TokSpan, Token, caret_message};
 

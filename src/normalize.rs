@@ -1,4 +1,3 @@
-// src/normalize.rs
 pub fn normalize_unicode_to_ascii(src: &str) -> String {
     let mut out = String::with_capacity(src.len());
     for ch in src.chars() {
