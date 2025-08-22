@@ -14,31 +14,31 @@ use file_processor::process_file;
 use repl::Repl;
 
 fn main() {
-        let args = env::args().skip(1).collect::<Vec<_>>();
+    let args = env::args().skip(1).collect::<Vec<_>>();
 
-        if !args.is_empty() {
-                exit_on_error(process_file(args));
-                return;
-        }
+    if !args.is_empty() {
+        exit_on_error(process_file(args));
+        return;
+    }
 
-        run_repl();
+    run_repl();
 }
 
 fn exit_on_error(result: Result<(), String>) {
-        if let Err(e) = result {
-                eprintln!("{e}");
-                std::process::exit(1);
-        }
+    if let Err(e) = result {
+        eprintln!("{e}");
+        std::process::exit(1);
+    }
 }
 
 fn run_repl() {
-        let mut repl = match Repl::new() {
-                Ok(r) => r,
-                Err(e) => {
-                        eprintln!("{e}");
-                        std::process::exit(1);
-                }
-        };
+    let mut repl = match Repl::new() {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(1);
+        }
+    };
 
-        exit_on_error(repl.run());
+    exit_on_error(repl.run());
 }
