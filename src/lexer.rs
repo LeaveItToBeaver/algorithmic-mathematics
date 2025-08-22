@@ -15,58 +15,52 @@ fn peek2(bytes: &[u8], i: usize) -> Option<(char, char)> {
         }
 }
 
-fn consume_block_comment(bytes: &[u8], start_star: usize) -> usize {
+fn consume_block_content(bytes: &[u8], mut i: usize) -> usize {
         let len = bytes.len();
-        let mut i = start_star + 1; // move to the char after the first '*'
         let mut depth = 1usize;
+        // `i` points at the first '*' in "/*", move past it
+        i += 1;
 
         while i < len {
                 let c = bytes[i] as char;
-
-                // open nested block: "/*"
                 if c == '/' && i + 1 < len && (bytes[i + 1] as char) == '*' {
                         depth += 1;
                         i += 2;
                         continue;
                 }
-                // close one block: "*/"
                 if c == '*' && i + 1 < len && (bytes[i + 1] as char) == '/' {
                         depth -= 1;
                         i += 2;
                         if depth == 0 {
-                                return i; // index right after the closing "*/"
+                                break;
                         }
                         continue;
                 }
-
-                i += 1; // advance normally
+                i += 1;
         }
-
-        // Unterminated: just return len so caller stops lexing
-        len
+        i
 }
-
 fn lex_string_literal(bytes: &[u8], _input: &str, start: usize, out: &mut Vec<TokSpan>) -> usize {
         let mut i = start + 1; // skip opening quote
         let len = bytes.len();
         let mut s = String::new();
-        
+
         while i < len {
                 let ch = bytes[i] as char;
                 i += 1;
-                
+
                 if ch == '"' {
                         out.push(span(Token::String(s), start, i));
                         return i;
                 }
-                
+
                 if ch == '\\' && i < len {
                         i = process_escape_sequence(bytes, i, &mut s);
                 } else {
                         s.push(ch);
                 }
         }
-        
+
         // Unterminated string
         out.push(span(
                 Token::Error("unterminated string literal".into()),
@@ -163,8 +157,7 @@ pub fn lex(input: &str) -> Vec<TokSpan> {
                                 continue;
                         }
                         if a == '/' && c == '*' {
-                                // /* block comment (nested) */
-                                i = consume_block_comment(bytes, i + 1); // pass index at '*'
+                                i = consume_block_content(bytes, i + 1);
                                 continue;
                         }
                 }
