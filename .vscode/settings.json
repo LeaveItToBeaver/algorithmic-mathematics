@@ -1,0 +1,7 @@
+{
+    "[rust]": {
+        "editor.tabSize": 8,
+        "editor.insertSpaces": true,
+        "editor.detectIndentation": false,
+    }
+}
