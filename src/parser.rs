@@ -4,7 +4,7 @@ use crate::token::{TokSpan, Token, caret_message};
 pub struct Tokens<'a> {
     items: Vec<TokSpan>,
     pos: usize,
-    src: &'a str, // NEW: keep the source for caret messages
+    src: &'a str,
 }
 
 impl<'a> Tokens<'a> {
