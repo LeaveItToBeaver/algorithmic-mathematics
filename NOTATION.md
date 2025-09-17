@@ -75,3 +75,31 @@ SafeDiv(1,2)   # = 0.5
 
 ---
 This is the baseline notation. Future: types, structs, access modifiers.
+
+---
+
+Module      ::= ModuleHeader? ImportOrExport* TopLevelDecl*
+ModuleHeader::= 'module' Ident NL
+ImportOrExport ::= ImportStmt | UseStmt | ExportStmt | ReexportStmt
+
+ImportStmt  ::= 'import' ModPath ('as' Ident)? NL
+UseStmt     ::= 'use' UseList NL
+UseList     ::= UseItem (',' UseItem)*
+UseItem     ::= ModPath ('.' '*')? | ModPath '.' Ident
+
+ExportStmt  ::= 'export' ExportList NL
+ExportList  ::= Ident (',' Ident)*
+
+ReexportStmt::= 'reexport' ReexportList NL
+ReexportList::= ModPath '.' Ident (',' ModPath '.' Ident)*
+
+TopLevelDecl::= Definition | Structure | Instance | Theorem | Axiom | Include
+Definition  ::= '@' Ident '(' ParamList? ')' '=' Expr NL
+Structure   ::= 'structure' Ident '(' StructParams? ')' NL 'axioms' NL AxiomList
+Instance    ::= 'instance' Ident '(' InstanceParams? ')' NL 'proofs' NL ProofList
+Include     ::= 'include' StringLiteral NL
+
+ModPath     ::= Ident ('.' Ident)*
+Ident       ::= [A-Za-z_…Unicode…][A-Za-z0-9_…]*
+
+NL          ::= newline or semicolon (you already support line-end)

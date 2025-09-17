@@ -1,7 +1,7 @@
 use core::f64;
 use std::collections::HashMap;
 
-use crate::ast::{AlgorithmDef, BinOp, Expr, UnOp};
+use crate::ast::{AlgorithmDef, BinOp, Expr, UnOp, Module, UseItem};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -68,6 +68,8 @@ impl Env {
 pub struct World<'a> {
     // registry of algorithms by name
     pub algs: HashMap<String, &'a AlgorithmDef>,
+    // symbol table: unqualified name -> qualified name (from use statements)
+    pub symbols: HashMap<String, String>,
 }
 
 impl<'a> World<'a> {
@@ -76,7 +78,65 @@ impl<'a> World<'a> {
         for d in defs {
             algs.insert(d.name.clone(), d);
         }
-        Self { algs }
+        Self { 
+            algs,
+            symbols: HashMap::new()
+        }
+    }
+    
+    pub fn build_symbol_table(&mut self, entry_module: &Module, all_modules: &HashMap<String, Module>) {
+        // Build alias map from imports: alias -> module_name
+        let mut aliases = HashMap::new();
+        for import in &entry_module.imports {
+            let module_name = import.path.segments.join(".");
+            if let Some(alias) = &import.alias {
+                aliases.insert(alias.clone(), module_name);
+            } else {
+                // If no alias, the module name itself is available
+                aliases.insert(module_name.clone(), module_name);
+            }
+        }
+        
+        // Build symbol table from use statements
+        for use_item in &entry_module.uses {
+            match use_item {
+                UseItem::Named { path, ident } => {
+                    let module_ref = path.segments.join(".");
+                    
+                    // Resolve alias if present
+                    let actual_module = aliases.get(&module_ref)
+                        .unwrap_or(&module_ref);
+                    
+                    let qualified_name = format!("{}.{}", actual_module, ident);
+                    self.symbols.insert(ident.clone(), qualified_name);
+                }
+                UseItem::Star { path: _ } => {
+                    // TODO: Handle wildcard imports if needed
+                }
+            }
+        }
+        
+        // Also add local (current module) functions with unqualified names
+        let current_module = &entry_module.name;
+        for (qualified_name, _) in &self.algs {
+            if let Some(unqualified) = qualified_name.strip_prefix(&format!("{}.", current_module)) {
+                self.symbols.insert(unqualified.to_string(), qualified_name.clone());
+            }
+        }
+        
+        // Add all exported symbols from imported modules to the symbol table
+        for import in &entry_module.imports {
+            let module_name = import.path.segments.join(".");
+            if let Some(imported_module) = all_modules.get(&module_name) {
+                for export_name in &imported_module.exports {
+                    let qualified_name = format!("{}.{}", module_name, export_name);
+                    if self.algs.contains_key(&qualified_name) {
+                        self.symbols.insert(export_name.clone(), qualified_name);
+                    }
+                }
+            }
+        }
+        
     }
 }
 
@@ -87,12 +147,15 @@ fn call_name<'a>(
     name: &str,
     vals: Vec<Value>,
 ) -> Result<Value, String> {
+    // Resolve unqualified names using symbol table
+    let resolved_name = world.symbols.get(name).map(|s| s.as_str()).unwrap_or(name);
+    
     // If it's an algorithm (explicit @ or known by name), run that algorithm body
-    if is_alg || world.algs.contains_key(name) {
+    if is_alg || world.algs.contains_key(resolved_name) {
         let alg = world
             .algs
-            .get(name)
-            .ok_or_else(|| format!("unknown algorithm: {}", name))?;
+            .get(resolved_name)
+            .ok_or_else(|| format!("unknown algorithm: {} (resolved as {})", name, resolved_name))?;
         let mut local = Env::with_params(&alg.params, &vals)?;
         return eval_expr(world, &mut local, &alg.body);
     }

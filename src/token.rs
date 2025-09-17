@@ -14,46 +14,64 @@ pub enum Token {
     Pipe,
     QMark,
     DblPipe,
-    DblAmp,
-    DblGt,
+    AmpAmp,
+    Bang,
+    Lt,
+    Le,
+    Gt,
+    Ge,
     Plus,
     Minus,
     Star,
     Slash,
-    Percent,
-    EqEq,
-    Neq,
-    Le,
-    Ge,
-    Lt,
-    Gt,
-    Bang,
+    Caret,
+    Dot,
+    DblGt,   // '>>'
+    EqEq,    // '=='
+    Neq,     // '!='
+    Percent, // '%'
+
+    // literals / names
     Ident(String),
     Number(String),
-    Bool(bool),
     String(String),
+    Bool(bool),
 
-    // unknown
+    // keywords
+    KwModule,
+    KwImport,
+    KwUse,
+    KwExport,
+    KwReexport,
+    KwInclude,
+    KwAs,
+
+    // misc
+    EOF,
     Error(String),
-
-    Caret,
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub struct TokSpan {
-    pub tok: Token,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Span {
     pub start: usize,
     pub end: usize,
 }
 
+#[derive(Debug, Clone)]
+pub struct TokSpan {
+    pub tok: Token,
+    pub span: Span,
+}
+
 pub fn span(tok: Token, start: usize, end: usize) -> TokSpan {
-    TokSpan { tok, start, end }
+    TokSpan {
+        tok,
+        span: Span { start, end },
+    }
 }
 
 pub fn caret_message(src: &str, byte: usize, msg: &str) -> String {
     let mut line = 1usize;
-    let mut col = 1usize;
     let mut last_nl = 0usize;
     for (i, ch) in src.char_indices() {
         if i >= byte {
@@ -62,11 +80,9 @@ pub fn caret_message(src: &str, byte: usize, msg: &str) -> String {
         if ch == '\n' {
             line += 1;
             last_nl = i + 1;
-            col = 1;
-        } else {
-            col += 1
         }
     }
+    let col = byte - last_nl + 1;
     let line_end = src[last_nl..]
         .find('\n')
         .map(|x| last_nl + x)

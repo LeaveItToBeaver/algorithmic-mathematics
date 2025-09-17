@@ -1,0 +1,16 @@
+module Arith
+import Nat
+use Nat.S, Nat.P, Nat.Add
+export Mul, Pow, IsZero
+
+@IsZero(x) = [ x = 0 ? true ; _ ? false ]
+
+@Mul(a,b) =
+  [ b = 0 ? 0;
+    _     ? Add(a, @Mul(a, P(b)))
+  ]
+
+@Pow(a,n) =
+  [ n = 0 ? 1;
+    _     ? @Mul(a, @Pow(a, P(n)))
+  ]

@@ -1,13 +1,14 @@
 use std::env;
 
-mod ast;
+pub mod ast;
 mod error_handling;
 mod eval;
 mod file_processor;
-mod lexer;
+pub mod lexer;
 mod normalize;
-mod parser;
+pub mod parser;
 mod repl;
+pub mod resolver;
 mod token;
 
 use file_processor::process_file;

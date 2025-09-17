@@ -1,0 +1,18 @@
+module Main
+import Nat
+import Arith as A
+import Factorial as F
+import Gcd
+
+use Nat.Add
+use A.Mul
+use A.Pow
+use F.Fact
+use Gcd.GCD
+
+@Main() =
+  @Add(2,3)      # 5
+  + @Mul(3,4)    # 12
+  + @Pow(2,5)    # 32
+  + @Fact(5)     # 120
+  + @GCD(48,18)  # 6

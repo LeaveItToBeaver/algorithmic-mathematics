@@ -1,0 +1,11 @@
+module Factorial
+import Nat
+import Arith
+use Nat.P
+use Arith.Mul
+export Fact
+
+@Fact(n) =
+  [ n = 0 ? 1;
+    _     ? @Mul(n, @Fact(P(n)))
+  ]

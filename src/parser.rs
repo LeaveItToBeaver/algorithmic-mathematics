@@ -1,10 +1,11 @@
 use crate::ast::{AlgorithmDef, BinOp, Expr, UnOp};
+use crate::ast::{Import, ModPath, Module, ReexportItem, TopLevelDecl, UseItem};
 use crate::token::{TokSpan, Token, caret_message};
 
 pub struct Tokens<'a> {
     items: Vec<TokSpan>,
     pos: usize,
-    src: &'a str, // NEW: keep the source for caret messages
+    src: &'a str,
 }
 
 impl<'a> Tokens<'a> {
@@ -47,8 +48,8 @@ impl<'a> Tokens<'a> {
         if !self.eat(want) {
             let byte = self
                 .peek_span()
-                .map(|s| s.start)
-                .or_else(|| self.last_span().map(|s| s.end))
+                .map(|s| s.span.start)
+                .or_else(|| self.last_span().map(|s| s.span.end))
                 .unwrap_or(0);
             let msg = format!("expected {:?} while parsing {}", want, ctx);
             let pretty = caret_message(self.src, byte, &msg);
@@ -56,14 +57,33 @@ impl<'a> Tokens<'a> {
         }
     }
 
-    fn err_here<T>(&self, msg: &str) -> T {
+    fn err_here(&self, msg: &str) -> ! {
         let byte = self
             .peek_span()
-            .map(|s| s.start)
-            .or_else(|| self.last_span().map(|s| s.end))
+            .map(|s| s.span.start)
+            .or_else(|| self.last_span().map(|s| s.span.end))
             .unwrap_or(0);
         let pretty = caret_message(self.src, byte, msg);
         panic!("{}", pretty);
+    }
+    fn expect_ident(&mut self, ctx: &str) -> String {
+        match self.next() {
+            Some(Token::Ident(s)) => s,
+            other => self.err_here(&format!(
+                "expected identifier while parsing {ctx}, got {:?}",
+                other
+            )),
+        }
+    }
+
+    fn expect_string(&mut self, ctx: &str) -> String {
+        match self.next() {
+            Some(Token::String(s)) => s,
+            other => self.err_here(&format!(
+                "expected string while parsing {ctx}, got {:?}",
+                other
+            )),
+        }
     }
 }
 
@@ -100,6 +120,145 @@ fn parse_parameter_list(ts: &mut Tokens) -> Vec<String> {
     }
 
     params
+}
+
+pub fn parse_module(ts: &mut Tokens) -> Module {
+    let mut name: Option<String> = None;
+    let mut imports = Vec::new();
+    let mut uses = Vec::new();
+    let mut exports = Vec::new();
+    let mut reexports = Vec::new();
+    let mut decls = Vec::new();
+
+    // optional 'module Name'
+    if ts.eat(&Token::KwModule) {
+        let id = ts.expect_ident("module name");
+        name = Some(id);
+    }
+
+    // any number of import/use/export/reexport
+    loop {
+        match ts.peek() {
+            Some(Token::KwImport) => {
+                ts.next();
+                imports.push(parse_import(ts));
+            }
+            Some(Token::KwUse) => {
+                ts.next();
+                uses.extend(parse_use_list(ts));
+            }
+            Some(Token::KwExport) => {
+                ts.next();
+                exports.extend(parse_ident_list(ts));
+            }
+            Some(Token::KwReexport) => {
+                ts.next();
+                reexports.extend(parse_reexport_list(ts));
+            }
+            _ => break,
+        }
+        // optional semicolon
+        ts.eat(&Token::Semicolon);
+    }
+
+    // declarations
+    while let Some(tok) = ts.peek().cloned() {
+        match tok {
+            Token::At => {
+                let d = parse_alg_def(ts);
+                decls.push(TopLevelDecl::Definition(d));
+            }
+            Token::KwInclude => {
+                ts.next();
+                let path = ts.expect_string("include path");
+                decls.push(TopLevelDecl::Include(path));
+                ts.eat(&Token::Semicolon);
+            }
+            Token::EOF => break,
+            _ => break,
+        }
+    }
+
+    Module {
+        name: name.unwrap_or_else(|| "Main".to_string()),
+        imports,
+        uses,
+        exports,
+        reexports,
+        decls,
+    }
+}
+
+fn parse_import(ts: &mut Tokens) -> Import {
+    let path = parse_mod_path(ts);
+    let alias = if ts.eat(&Token::KwAs) {
+        Some(ts.expect_ident("import alias"))
+    } else {
+        None
+    };
+    Import { path, alias }
+}
+
+fn parse_use_list(ts: &mut Tokens) -> Vec<UseItem> {
+    let mut items = Vec::new();
+    loop {
+        // Parse module path manually for use statements
+        let path = parse_mod_path_for_use(ts);
+        ts.expect(&Token::Dot, "'.' in use statement");
+        
+        if ts.eat(&Token::Star) {
+            items.push(UseItem::Star { path });
+        } else {
+            let id = ts.expect_ident("name after path in use");
+            items.push(UseItem::Named { path, ident: id });
+        }
+        
+        if !ts.eat(&Token::Comma) {
+            break;
+        }
+    }
+    items
+}
+
+fn parse_mod_path_for_use(ts: &mut Tokens) -> ModPath {
+    let mut segs = Vec::new();
+    segs.push(ts.expect_ident("module path segment"));
+    // Don't consume additional dots - let parse_use_list handle the final .name part
+    ModPath { segments: segs }
+}
+
+fn parse_reexport_list(ts: &mut Tokens) -> Vec<ReexportItem> {
+    let mut items = Vec::new();
+    loop {
+        let path = parse_mod_path(ts);
+        ts.expect(&Token::Dot, "'.' before name to reexport");
+        let id = ts.expect_ident("name to reexport");
+        items.push(ReexportItem { path, ident: id });
+        if !ts.eat(&Token::Comma) {
+            break;
+        }
+    }
+    items
+}
+
+fn parse_ident_list(ts: &mut Tokens) -> Vec<String> {
+    let mut xs = Vec::new();
+    loop {
+        xs.push(ts.expect_ident("identifier"));
+        if !ts.eat(&Token::Comma) {
+            break;
+        }
+    }
+    xs
+}
+
+fn parse_mod_path(ts: &mut Tokens) -> ModPath {
+    let mut segs = Vec::new();
+    segs.push(ts.expect_ident("module path segment"));
+    while ts.eat(&Token::Dot) {
+        segs.push(ts.expect_ident("module path segment"));
+    }
+    ModPath { segments: segs }
 }
 
 /* Expr := Case | Pipe
@@ -156,7 +315,7 @@ fn parse_conditional_arm(ts: &mut Tokens, arms: &mut Vec<(Expr, Expr)>) {
         let rhs = parse_expr(ts);
         arms.push((cond, rhs));
     } else {
-        ts.err_here::<()>("expected '?' or '->' after condition in case arm");
+        ts.err_here("expected '?' or '->' after condition in case arm");
     }
 }
 
@@ -203,13 +362,13 @@ fn parse_or(ts: &mut Tokens) -> Expr {
 }
 
 fn parse_and(ts: &mut Tokens) -> Expr {
-    parse_binary_left_associative(ts, parse_cmp, &[(Token::DblAmp, BinOp::And)])
+    parse_binary_left_associative(ts, parse_cmp, &[(Token::AmpAmp, BinOp::And)])
 }
 
 fn parse_cmp(ts: &mut Tokens) -> Expr {
     let mut node = parse_add(ts);
     let op = match ts.peek() {
-        Some(Token::EqEq) | Some(Token::Equal) => Some(BinOp::Eq), // accept '=' as equality too
+        Some(Token::EqEq) | Some(Token::Equal) => Some(BinOp::Eq), // allow '=' as equality too
         Some(Token::Neq) => Some(BinOp::Ne),
         Some(Token::Le) => Some(BinOp::Le),
         Some(Token::Ge) => Some(BinOp::Ge),

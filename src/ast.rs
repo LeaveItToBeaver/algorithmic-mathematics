@@ -7,7 +7,7 @@ pub enum Expr {
         is_alg: bool,
         name: String,
         args: Vec<Expr>,
-    }, // f(x) or @Alg(x)
+    },
     Unary {
         op: UnOp,
         expr: Box<Expr>,
@@ -24,23 +24,23 @@ pub enum Expr {
     Pipe {
         head: Box<Expr>,
         steps: Vec<Expr>,
-    }, // x >> @f >> g
+    },
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum UnOp {
     Neg,
     Not,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum BinOp {
     Add,
     Sub,
     Mul,
     Div,
-    Pow,
     Mod,
+    Pow,
     Eq,
     Ne,
     Lt,
@@ -51,11 +51,53 @@ pub enum BinOp {
     Or,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AlgorithmDef {
     pub name: String,
     pub params: Vec<String>,
     pub body: Expr,
+}
+
+/// === Modules ===
+
+#[derive(Debug, Clone)]
+pub struct Module {
+    pub name: String,
+    pub imports: Vec<Import>,
+    pub uses: Vec<UseItem>,
+    pub exports: Vec<String>,
+    pub reexports: Vec<ReexportItem>,
+    pub decls: Vec<TopLevelDecl>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Import {
+    pub path: ModPath,
+    pub alias: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub enum UseItem {
+    Star { path: ModPath },
+    Named { path: ModPath, ident: String },
+}
+
+#[derive(Debug, Clone)]
+pub struct ReexportItem {
+    pub path: ModPath,
+    pub ident: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ModPath {
+    pub segments: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub enum TopLevelDecl {
+    Definition(AlgorithmDef),
+    Include(String), // path
+                     // Structure/Instance/etc can be added later
 }
 
 pub fn show_expr(e: &Expr, indent: usize) {
@@ -65,7 +107,7 @@ pub fn show_expr(e: &Expr, indent: usize) {
         Expr::Bool(b) => println!("{pad}Bool({b})"),
         Expr::Ident(s) => println!("{pad}Ident({s})"),
         Expr::Call { is_alg, name, args } => {
-            println!("{pad}Call(is_alg={is_alg}, name={name})");
+            println!("{pad}Call is_alg={is_alg} name={name}");
             for a in args {
                 show_expr(a, indent + 1);
             }
@@ -81,22 +123,18 @@ pub fn show_expr(e: &Expr, indent: usize) {
         }
         Expr::Case { arms, default } => {
             println!("{pad}Case");
-            for (c, r) in arms {
-                println!("{pad}  Arm:");
-                show_expr(c, indent + 2);
-                println!("{pad}  =>");
-                show_expr(r, indent + 2);
+            for (c, v) in arms {
+                show_expr(c, indent + 1);
+                show_expr(v, indent + 1);
             }
-            println!("{pad}  Default:");
-            show_expr(default, indent + 2);
+            println!("{pad}Default:");
+            show_expr(default, indent + 1);
         }
         Expr::Pipe { head, steps } => {
             println!("{pad}Pipe");
-            println!("{pad}  Head:");
-            show_expr(head, indent + 2);
+            show_expr(head, indent + 1);
             for s in steps {
-                println!("{pad}  >> Step:");
-                show_expr(s, indent + 2);
+                show_expr(s, indent + 1);
             }
         }
     }
