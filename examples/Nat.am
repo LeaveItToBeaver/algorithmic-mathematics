@@ -1,15 +1,15 @@
 module Nat
 export S, P, Add, Sub
 
-@S(x) = x + 1
-@P(x) = [ x = 0 ? 0 ; _ ? x - 1 ]
+@S(x) := x + 1
+@P(x) := [ x = 0 -> 0 ; else -> x - 1 ]
 
-@Add(a,b) =
-  [ b = 0 ? a;
-    _     ? S(@Add(a, P(b)))
+@Add(a,b) :=
+  [ b = 0 -> a;
+    else  -> S(@Add(a, P(b)))
   ]
 
-@Sub(a,b) =
-  [ b = 0 ? a;
-    _     ? @Sub(P(a), P(b))
+@Sub(a,b) :=
+  [ b = 0 -> a;
+    else  -> @Sub(P(a), P(b))
   ]

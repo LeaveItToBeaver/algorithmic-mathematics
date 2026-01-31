@@ -49,11 +49,58 @@ fn keyword(text: &str) -> Option<Token> {
         "reexport" => Some(Token::KwReexport),
         "include" => Some(Token::KwInclude),
         "as" => Some(Token::KwAs),
+        "else" => Some(Token::KwElse),
+        "let" => Some(Token::KwLet),
+        "in" => Some(Token::KwIn),
+        "requires" => Some(Token::KwRequires),
+        "ensures" => Some(Token::KwEnsures),
         "true" => Some(Token::Bool(true)),
         "false" => Some(Token::Bool(false)),
+        "mod" => Some(Token::KwMod),  // modulo keyword (alternative to %)
         _ => None,
     }
 }
+
+/// Two-character operators, checked before single-char
+const TWO_CHAR_OPS: &[((char, char), Token)] = &[
+    ((':', '='), Token::Defines),
+    (('-', '>'), Token::Arrow),
+    (('|', '|'), Token::DblPipe),
+    (('&', '&'), Token::AmpAmp),
+    (('<', '='), Token::Le),
+    (('>', '='), Token::Ge),
+    (('>', '>'), Token::DblGt),
+    (('=', '='), Token::EqEq),
+    (('!', '='), Token::Neq),
+];
+
+/// Single-character tokens
+const SINGLE_CHAR_OPS: &[(char, Token)] = &[
+    ('@', Token::At),
+    ('(', Token::LParen),
+    (')', Token::RParen),
+    ('[', Token::LBracket),
+    (']', Token::RBracket),
+    ('{', Token::LBrace),
+    ('}', Token::RBrace),
+    (',', Token::Comma),
+    (';', Token::Semicolon),
+    // ('_', Token::Underscore),  // Now treated as ident start
+    ('=', Token::Equal),
+    ('|', Token::Pipe),
+    ('?', Token::QMark),
+    ('!', Token::Bang),
+    ('<', Token::Lt),
+    ('>', Token::Gt),
+    ('+', Token::Plus),
+    ('-', Token::Minus),
+    ('*', Token::Star),
+    ('/', Token::Slash),
+    ('^', Token::Caret),
+    ('.', Token::Dot),
+    (':', Token::Colon),
+    ('%', Token::Percent),
+];
 
 pub fn lex(input: &str) -> Vec<TokSpan> {
     let bytes = input.as_bytes();
@@ -64,267 +111,155 @@ pub fn lex(input: &str) -> Vec<TokSpan> {
     while i < len {
         let b = bytes[i];
 
-        // whitespace
+        // Skip whitespace
         if b.is_ascii_whitespace() {
             i += 1;
             continue;
         }
 
-        // two-char operators
+        // Try two-char operators first (must check before single-char)
         if let Some((a, c)) = peek2(bytes, i) {
-            match (a, c) {
-                ('-', '>') => {
-                    out.push(span(Token::Arrow, i, i + 2));
-                    i += 2;
-                    continue;
-                }
-                ('|', '|') => {
-                    out.push(span(Token::DblPipe, i, i + 2));
-                    i += 2;
-                    continue;
-                }
-                ('&', '&') => {
-                    out.push(span(Token::AmpAmp, i, i + 2));
-                    i += 2;
-                    continue;
-                }
-                ('<', '=') => {
-                    out.push(span(Token::Le, i, i + 2));
-                    i += 2;
-                    continue;
-                }
-                ('>', '=') => {
-                    out.push(span(Token::Ge, i, i + 2));
-                    i += 2;
-                    continue;
-                }
-                ('>', '>') => {
-                    out.push(span(Token::DblGt, i, i + 2));
-                    i += 2;
-                    continue;
-                }
-                ('=', '=') => {
-                    out.push(span(Token::EqEq, i, i + 2));
-                    i += 2;
-                    continue;
-                }
-                ('!', '=') => {
-                    out.push(span(Token::Neq, i, i + 2));
-                    i += 2;
-                    continue;
-                }
-                _ => {}
-            }
-        }
-
-        // comments
-        if let Some((a, c)) = peek2(bytes, i) {
+            // Comments take priority
             if a == '/' && c == '/' {
-                // line comment
-                i += 2;
-                while i < len && (bytes[i] as char) != '\n' {
-                    i += 1;
-                }
+                i = skip_line_comment(bytes, i + 2, len);
                 continue;
             }
             if a == '/' && c == '*' {
                 i = consume_block_content(bytes, i);
                 continue;
             }
+            
+            // Two-char operators
+            if let Some(tok) = lookup_two_char(a, c) {
+                out.push(span(tok, i, i + 2));
+                i += 2;
+                continue;
+            }
         }
 
-        // single-char punctuation
-        match b as char {
-            '@' => {
-                out.push(span(Token::At, i, i + 1));
-                i += 1;
-                continue;
-            }
-            '(' => {
-                out.push(span(Token::LParen, i, i + 1));
-                i += 1;
-                continue;
-            }
-            ')' => {
-                out.push(span(Token::RParen, i, i + 1));
-                i += 1;
-                continue;
-            }
-            '[' => {
-                out.push(span(Token::LBracket, i, i + 1));
-                i += 1;
-                continue;
-            }
-            ']' => {
-                out.push(span(Token::RBracket, i, i + 1));
-                i += 1;
-                continue;
-            }
-            ',' => {
-                out.push(span(Token::Comma, i, i + 1));
-                i += 1;
-                continue;
-            }
-            ';' => {
-                out.push(span(Token::Semicolon, i, i + 1));
-                i += 1;
-                continue;
-            }
-            '_' => {
-                out.push(span(Token::Underscore, i, i + 1));
-                i += 1;
-                continue;
-            }
-            '=' => {
-                out.push(span(Token::Equal, i, i + 1));
-                i += 1;
-                continue;
-            }
-            '|' => {
-                out.push(span(Token::Pipe, i, i + 1));
-                i += 1;
-                continue;
-            }
-            '?' => {
-                out.push(span(Token::QMark, i, i + 1));
-                i += 1;
-                continue;
-            }
-            '!' => {
-                out.push(span(Token::Bang, i, i + 1));
-                i += 1;
-                continue;
-            }
-            '<' => {
-                out.push(span(Token::Lt, i, i + 1));
-                i += 1;
-                continue;
-            }
-            '>' => {
-                out.push(span(Token::Gt, i, i + 1));
-                i += 1;
-                continue;
-            }
-            '+' => {
-                out.push(span(Token::Plus, i, i + 1));
-                i += 1;
-                continue;
-            }
-            '-' => {
-                out.push(span(Token::Minus, i, i + 1));
-                i += 1;
-                continue;
-            }
-            '*' => {
-                out.push(span(Token::Star, i, i + 1));
-                i += 1;
-                continue;
-            }
-            '/' => {
-                out.push(span(Token::Slash, i, i + 1));
-                i += 1;
-                continue;
-            }
-            '^' => {
-                out.push(span(Token::Caret, i, i + 1));
-                i += 1;
-                continue;
-            }
-            '.' => {
-                out.push(span(Token::Dot, i, i + 1));
-                i += 1;
-                continue;
-            }
-            '"' => {
-                // string literal
-                let start = i;
-                i += 1;
-                let mut s = String::new();
-                while i < len {
-                    let ch = bytes[i] as char;
-                    if ch == '"' {
-                        i += 1;
-                        break;
-                    }
-                    if ch == '\\' {
-                        i += 1;
-                        if i >= len {
-                            break;
-                        }
-                        let esc = bytes[i] as char;
-                        s.push(match esc {
-                            '\\' => '\\',
-                            '"' => '"',
-                            'n' => '\n',
-                            't' => '\t',
-                            'r' => '\r',
-                            _ => esc,
-                        });
-                        i += 1;
-                        continue;
-                    }
-                    s.push(ch);
-                    i += 1;
-                }
-                out.push(span(Token::String(s), start, i));
-                continue;
-            }
-            '%' => {
-                out.push(span(Token::Percent, i, i + 1));
-                i += 1;
-                continue;
-            }
-            _ => {}
+        // String literals
+        if b as char == '"' {
+            let (tok, end) = lex_string(bytes, i, len);
+            out.push(span(tok, i, end));
+            i = end;
+            continue;
         }
 
-        // identifier / keyword
+        // Identifiers and keywords (includes _ as start)
         if is_ident_start(b as char) {
-            let start = i;
-            i += 1;
-            while i < len && is_ident_continue(bytes[i] as char) {
-                i += 1;
-            }
-            let text = &input[start..i];
-            if let Some(kw) = keyword(text) {
-                out.push(span(kw, start, i));
-            } else {
-                out.push(span(Token::Ident(text.to_string()), start, i));
-            }
+            let (tok, end) = lex_identifier(input, bytes, i, len);
+            out.push(span(tok, i, end));
+            i = end;
             continue;
         }
 
-        // number
+        // Numbers
         if (b as char).is_ascii_digit() {
-            let start = i;
-            i += 1;
-            while i < len && (bytes[i] as char).is_ascii_digit() {
-                i += 1;
-            }
-            if i < len && (bytes[i] as char) == '.' {
-                let j = i + 1;
-                // only treat as decimal if next is digit
-                if j < len && (bytes[j] as char).is_ascii_digit() {
-                    i += 1;
-                    while i < len && (bytes[i] as char).is_ascii_digit() {
-                        i += 1;
-                    }
-                }
-            }
-            let text = &input[start..i];
-            out.push(span(Token::Number(text.to_string()), start, i));
+            let (tok, end) = lex_number(input, bytes, i, len);
+            out.push(span(tok, i, end));
+            i = end;
             continue;
         }
 
-        // unknown
-        let start = i;
-        let bad = bytes[i] as char;
-        i += 1;
+        // Single-char operators
+        if let Some(tok) = lookup_single_char(b as char) {
+            out.push(span(tok, i, i + 1));
+            i += 1;
+            continue;
+        }
+
+        // Unknown character
         out.push(span(
-            Token::Error(format!("unexpected character '{}'", bad)),
-            start,
+            Token::Error(format!("unexpected character '{}'", b as char)),
             i,
+            i + 1,
         ));
+        i += 1;
     }
 
     out
+}
+
+fn lookup_two_char(a: char, c: char) -> Option<Token> {
+    TWO_CHAR_OPS
+        .iter()
+        .find(|((x, y), _)| *x == a && *y == c)
+        .map(|(_, tok)| tok.clone())
+}
+
+fn lookup_single_char(c: char) -> Option<Token> {
+    SINGLE_CHAR_OPS
+        .iter()
+        .find(|(ch, _)| *ch == c)
+        .map(|(_, tok)| tok.clone())
+}
+
+fn skip_line_comment(bytes: &[u8], start: usize, len: usize) -> usize {
+    let mut i = start;
+    while i < len && (bytes[i] as char) != '\n' {
+        i += 1;
+    }
+    i
+}
+
+fn lex_string(bytes: &[u8], start: usize, len: usize) -> (Token, usize) {
+    let mut i = start + 1; // skip opening quote
+    let mut s = String::new();
+    
+    while i < len {
+        let ch = bytes[i] as char;
+        if ch == '"' {
+            return (Token::String(s), i + 1);
+        }
+        if ch == '\\' && i + 1 < len {
+            i += 1;
+            let esc = bytes[i] as char;
+            s.push(match esc {
+                '\\' => '\\',
+                '"' => '"',
+                'n' => '\n',
+                't' => '\t',
+                'r' => '\r',
+                _ => esc,
+            });
+            i += 1;
+            continue;
+        }
+        s.push(ch);
+        i += 1;
+    }
+    
+    (Token::String(s), i) // unterminated string
+}
+
+fn lex_identifier(input: &str, bytes: &[u8], start: usize, len: usize) -> (Token, usize) {
+    let mut i = start + 1;
+    while i < len && is_ident_continue(bytes[i] as char) {
+        i += 1;
+    }
+    let text = &input[start..i];
+    let tok = keyword(text).unwrap_or_else(|| Token::Ident(text.to_string()));
+    (tok, i)
+}
+
+fn lex_number(input: &str, bytes: &[u8], start: usize, len: usize) -> (Token, usize) {
+    let mut i = start + 1;
+    
+    // Integer part
+    while i < len && (bytes[i] as char).is_ascii_digit() {
+        i += 1;
+    }
+    
+    // Decimal part (only if followed by digit, not method call like 3.14 vs obj.method)
+    if i < len && (bytes[i] as char) == '.' {
+        if i + 1 < len && (bytes[i + 1] as char).is_ascii_digit() {
+            i += 1; // consume '.'
+            while i < len && (bytes[i] as char).is_ascii_digit() {
+                i += 1;
+            }
+        }
+    }
+    
+    let text = &input[start..i];
+    (Token::Number(text.to_string()), i)
 }

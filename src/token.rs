@@ -6,11 +6,14 @@ pub enum Token {
     RParen,
     LBracket,
     RBracket,
+    LBrace,      // NEW: '{'
+    RBrace,      // NEW: '}'
     Comma,
     Semicolon,
     Underscore,
     Equal,
-    Arrow,
+    Arrow,       // '->'
+    Defines,     // NEW: ':='
     Pipe,
     QMark,
     DblPipe,
@@ -30,6 +33,7 @@ pub enum Token {
     EqEq,    // '=='
     Neq,     // '!='
     Percent, // '%'
+    Colon,   // NEW: ':'
 
     // literals / names
     Ident(String),
@@ -45,6 +49,12 @@ pub enum Token {
     KwReexport,
     KwInclude,
     KwAs,
+    KwElse,      // NEW: 'else'
+    KwLet,       // NEW: 'let' (already used but not in enum)
+    KwIn,        // NEW: 'in' (for let bindings)
+    KwRequires,  // NEW: 'requires' (for specifications)
+    KwEnsures,   // NEW: 'ensures' (for specifications)
+    KwMod,       // 'mod' keyword (alternative to % for modulo)
 
     // misc
     EOF,

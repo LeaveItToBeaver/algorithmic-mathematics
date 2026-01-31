@@ -1,7 +1,7 @@
 use std::fs;
 
 use std::path::Path;
-use crate::ast::{AlgorithmDef, show_expr};
+use crate::ast::{AlgorithmDef, show_expr, show_params};
 use crate::error_handling::safe_parse;
 use crate::eval::{Env, Value, World, eval_expr};
 use crate::lexer::lex;
@@ -96,7 +96,7 @@ pub fn process_file(mut args: Vec<String>) -> Result<(), String> {
 
 fn print_ast(defs: &[AlgorithmDef]) {
     for d in defs {
-        println!("AlgorithmDef {}({})", d.name, d.params.join(","));
+        println!("AlgorithmDef {}({})", d.name, show_params(&d.params));
         println!("body:");
         show_expr(&d.body, 1);
     }
@@ -125,7 +125,7 @@ fn execute_call(call_src: &str, defs: &[AlgorithmDef], src: &str, entry_module: 
 fn print_summary(defs: &[AlgorithmDef], path: &str) {
     println!("Loaded {} algorithm(s):", defs.len());
     for d in defs {
-        println!("  {}({})", d.name, d.params.join(", "));
+        println!("  {}({})", d.name, show_params(&d.params));
     }
     println!(
         "Try:  cargo run -- {} --call \"{}(1,0)\"",

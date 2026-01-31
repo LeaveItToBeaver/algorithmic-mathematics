@@ -1,7 +1,8 @@
 use core::f64;
 use std::collections::HashMap;
 
-use crate::ast::{AlgorithmDef, BinOp, Expr, UnOp, Module, UseItem};
+use crate::ast::{AlgorithmDef, BinOp, Expr, Type, UnOp, Module, UseItem};
+use crate::builtins::call_builtin;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -10,13 +11,13 @@ pub enum Value {
 }
 
 impl Value {
-    fn as_f64(&self) -> Result<f64, String> {
+    pub fn as_f64(&self) -> Result<f64, String> {
         match self {
             Value::Number(x) => Ok(*x),
             other => Err(format!("expected number, got {:?}", other)),
         }
     }
-    fn as_bool(&self) -> Result<bool, String> {
+    pub fn as_bool(&self) -> Result<bool, String> {
         match self {
             Value::Bool(b) => Ok(*b),
             other => Err(format!("expected bool, got {:?}", other)),
@@ -31,7 +32,7 @@ pub struct Env {
 }
 
 impl Env {
-    pub fn with_params(params: &[String], args: &[Value]) -> Result<Self, String> {
+    pub fn with_params(params: &[(String, Option<Type>)], args: &[Value]) -> Result<Self, String> {
         if params.len() != args.len() {
             return Err(format!(
                 "argument count mismatch: expected {}, got {}",
@@ -40,8 +41,9 @@ impl Env {
             ));
         }
         let mut vars = HashMap::new();
-        for (p, v) in params.iter().zip(args.iter()) {
-            vars.insert(p.clone(), v.clone());
+        for ((name, _ty), v) in params.iter().zip(args.iter()) {
+            // TODO: Type checking would go here when we implement it
+            vars.insert(name.clone(), v.clone());
         }
         // Built-in constants
         vars.insert("inf".to_string(), Value::Number(f64::INFINITY));
@@ -160,82 +162,8 @@ fn call_name<'a>(
         return eval_expr(world, &mut local, &alg.body);
     }
 
-    // Otherwise: handle tiny built-in functions here
-    match name {
-        "sqrt" => {
-            if vals.len() != 1 {
-                return Err(format!("sqrt expects 1 arg, got {}", vals.len()));
-            }
-            Ok(Value::Number(vals[0].as_f64()?.sqrt()))
-        }
-        "abs" => {
-            if vals.len() != 1 {
-                return Err(format!("abs expects 1 arg, got {}", vals.len()));
-            }
-            Ok(Value::Number(vals[0].as_f64()?.abs()))
-        }
-        "sin" => {
-            if vals.len() != 1 {
-                return Err(format!("sin expects 1 arg, got {}", vals.len()));
-            }
-            Ok(Value::Number(vals[0].as_f64()?.sin()))
-        }
-        "cos" => {
-            if vals.len() != 1 {
-                return Err(format!("cos expects 1 arg, got {}", vals.len()));
-            }
-            Ok(Value::Number(vals[0].as_f64()?.cos()))
-        }
-        "tan" => {
-            if vals.len() != 1 {
-                return Err(format!("tan expects 1 arg, got {}", vals.len()));
-            }
-            Ok(Value::Number(vals[0].as_f64()?.tan()))
-        }
-        "log" => {
-            if vals.len() != 1 {
-                return Err(format!("log expects 1 arg, got {}", vals.len()));
-            }
-            Ok(Value::Number(vals[0].as_f64()?.ln()))
-        }
-        "log10" => {
-            if vals.len() != 1 {
-                return Err(format!("log10 expects 1 arg, got {}", vals.len()));
-            }
-            Ok(Value::Number(vals[0].as_f64()?.log10()))
-        }
-        "floor" => {
-            if vals.len() != 1 {
-                return Err(format!("floor expects 1 arg, got {}", vals.len()));
-            }
-            Ok(Value::Number(vals[0].as_f64()?.floor()))
-        }
-        "ceil" => {
-            if vals.len() != 1 {
-                return Err(format!("ceil expects 1 arg, got {}", vals.len()));
-            }
-            Ok(Value::Number(vals[0].as_f64()?.ceil()))
-        }
-        "round" => {
-            if vals.len() != 1 {
-                return Err(format!("round expects 1 arg, got {}", vals.len()));
-            }
-            Ok(Value::Number(vals[0].as_f64()?.round()))
-        }
-        "min" => {
-            if vals.len() != 2 {
-                return Err(format!("min expects 2 args, got {}", vals.len()));
-            }
-            Ok(Value::Number(vals[0].as_f64()?.min(vals[1].as_f64()?)))
-        }
-        "max" => {
-            if vals.len() != 2 {
-                return Err(format!("max expects 2 args, got {}", vals.len()));
-            }
-            Ok(Value::Number(vals[0].as_f64()?.max(vals[1].as_f64()?)))
-        }
-        _ => Err(format!("unknown function: {}", name)),
-    }
+    // Otherwise: try built-in mathematical functions
+    call_builtin(name, &vals)
 }
 
 pub fn eval_expr<'a>(world: &World<'a>, env: &mut Env, e: &Expr) -> Result<Value, String> {

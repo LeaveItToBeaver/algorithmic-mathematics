@@ -1,12 +1,14 @@
 use std::env;
 
 pub mod ast;
+mod builtins;
 mod error_handling;
 mod eval;
 mod file_processor;
 pub mod lexer;
 mod normalize;
 pub mod parser;
+mod render;
 mod repl;
 pub mod resolver;
 mod token;

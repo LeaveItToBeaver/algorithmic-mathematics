@@ -1,7 +1,7 @@
 use rustyline::DefaultEditor;
 use rustyline::error::ReadlineError;
 
-use crate::ast::AlgorithmDef;
+use crate::ast::{AlgorithmDef, show_params};
 use crate::error_handling::safe_parse;
 use crate::eval::{Env, Value, World, eval_expr};
 use crate::lexer::lex;
@@ -84,7 +84,7 @@ impl Repl {
                     println!("<no algorithms defined>");
                 } else {
                     for d in &self.world_defs {
-                        println!("{}({})", d.name, d.params.join(", "));
+                        println!("{}({})", d.name, show_params(&d.params));
                     }
                 }
                 true
@@ -134,7 +134,7 @@ impl Repl {
             self.world_defs.push(def);
         }
         let d = self.world_defs.last().unwrap();
-        println!("Defined: {}({})", d.name, d.params.join(", "));
+        println!("Defined: {}({})", d.name, show_params(&d.params));
     }
 
     fn handle_expression(&mut self, ts: &mut Tokens) {

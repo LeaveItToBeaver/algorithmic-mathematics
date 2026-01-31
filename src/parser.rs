@@ -1,4 +1,4 @@
-use crate::ast::{AlgorithmDef, BinOp, Expr, UnOp};
+use crate::ast::{AlgorithmDef, BinOp, Expr, Specification, Type, UnOp};
 use crate::ast::{Import, ModPath, Module, ReexportItem, TopLevelDecl, UseItem};
 use crate::token::{TokSpan, Token, caret_message};
 
@@ -87,16 +87,44 @@ impl<'a> Tokens<'a> {
     }
 }
 
-/* AlgDef := '@' Ident '(' [Ident {',' Ident}] ')' '=' Expr */
+/* AlgDef := '@' Ident '(' [TypedParam {',' TypedParam}] ')' ['->' Type] [Spec] ':=' Expr
+   where TypedParam := Ident [':' Type]
+*/
 pub fn parse_alg_def(ts: &mut Tokens) -> AlgorithmDef {
     ts.expect(&Token::At, "algorithm start '@'");
     let name = parse_algorithm_name(ts);
     ts.expect(&Token::LParen, "parameter list '('");
-    let params = parse_parameter_list(ts);
+    let params = parse_typed_parameter_list(ts);
     ts.expect(&Token::RParen, "parameter list ')'");
-    ts.expect(&Token::Equal, "definition '='");
+
+    // Optional return type: -> Type
+    let return_type = if ts.eat(&Token::Arrow) {
+        Some(parse_type(ts))
+    } else {
+        None
+    };
+
+    // Optional specification (requires/ensures)
+    let spec = if matches!(ts.peek(), Some(Token::KwRequires)) {
+        Some(parse_specification(ts))
+    } else {
+        None
+    };
+
+    // Definition operator: := or = (for backwards compatibility)
+    if !ts.eat(&Token::Defines) {
+        ts.expect(&Token::Equal, "definition ':=' or '='");
+    }
+
     let body = parse_expr(ts);
-    AlgorithmDef { name, params, body }
+
+    AlgorithmDef {
+        name,
+        params,
+        return_type,
+        spec,
+        body,
+    }
 }
 
 fn parse_algorithm_name(ts: &mut Tokens) -> String {
@@ -120,6 +148,134 @@ fn parse_parameter_list(ts: &mut Tokens) -> Vec<String> {
     }
 
     params
+}
+
+/// Parse parameter list with optional type annotations: name or name: Type
+fn parse_typed_parameter_list(ts: &mut Tokens) -> Vec<(String, Option<Type>)> {
+    let mut params = Vec::new();
+
+    while let Some(Token::Ident(_)) = ts.peek() {
+        if let Some(Token::Ident(s)) = ts.next() {
+            let ty = if ts.eat(&Token::Colon) {
+                Some(parse_type(ts))
+            } else {
+                None
+            };
+            params.push((s, ty));
+        }
+
+        if !ts.eat(&Token::Comma) {
+            break;
+        }
+    }
+
+    params
+}
+
+/// Parse a type annotation
+fn parse_type(ts: &mut Tokens) -> Type {
+    match ts.peek() {
+        Some(Token::Ident(name)) => {
+            let name = name.clone();
+            ts.next();
+
+            // Check for basic types
+            let base_type = match name.as_str() {
+                "R" => Type::Real,
+                "N" => Type::Natural,
+                "Z" => Type::Integer,
+                "Q" => Type::Rational,
+                "C" => Type::Complex,
+                "Bool" => Type::Bool,
+                "Set" => {
+                    // Set<Type>
+                    ts.expect(&Token::Lt, "generic type parameter '<'");
+                    let inner = parse_type(ts);
+                    ts.expect(&Token::Gt, "generic type parameter '>'");
+                    return Type::Set(Box::new(inner));
+                }
+                "Vec" => {
+                    // Vec<Type> or Vec<Type, n>
+                    ts.expect(&Token::Lt, "generic type parameter '<'");
+                    let inner = parse_type(ts);
+                    let dim = if ts.eat(&Token::Comma) {
+                        match ts.next() {
+                            Some(Token::Number(n)) => Some(n.parse::<u32>().unwrap_or(0)),
+                            _ => ts.err_here("expected number for vector dimension"),
+                        }
+                    } else {
+                        None
+                    };
+                    ts.expect(&Token::Gt, "generic type parameter '>'");
+                    return Type::Vec(Box::new(inner), dim);
+                }
+                "List" => {
+                    // List<Type>
+                    ts.expect(&Token::Lt, "generic type parameter '<'");
+                    let inner = parse_type(ts);
+                    ts.expect(&Token::Gt, "generic type parameter '>'");
+                    return Type::List(Box::new(inner));
+                }
+                "Option" => {
+                    // Option<Type>
+                    ts.expect(&Token::Lt, "generic type parameter '<'");
+                    let inner = parse_type(ts);
+                    ts.expect(&Token::Gt, "generic type parameter '>'");
+                    return Type::Option(Box::new(inner));
+                }
+                _ => Type::Named(name),
+            };
+
+            // Check for superscript (R^3)
+            if ts.eat(&Token::Caret) {
+                match ts.next() {
+                    Some(Token::Number(n)) => {
+                        let dim = n.parse::<u32>().unwrap_or(0);
+                        Type::VecSpace(Box::new(base_type), dim)
+                    }
+                    _ => ts.err_here("expected number after '^' in type"),
+                }
+            } else {
+                base_type
+            }
+        }
+        Some(Token::LParen) => {
+            // Tuple type: (T1, T2, ...)
+            ts.next();
+            let mut types = vec![];
+            if !matches!(ts.peek(), Some(Token::RParen)) {
+                loop {
+                    types.push(parse_type(ts));
+                    if !ts.eat(&Token::Comma) {
+                        break;
+                    }
+                }
+            }
+            ts.expect(&Token::RParen, "tuple type ')'");
+            Type::Tuple(types)
+        }
+        _ => ts.err_here("expected type annotation"),
+    }
+}
+
+/// Parse specification (requires/ensures clauses)
+fn parse_specification(ts: &mut Tokens) -> Specification {
+    let mut requires = vec![];
+    let mut ensures = vec![];
+
+    // requires: expr
+    if ts.eat(&Token::KwRequires) {
+        ts.expect(&Token::Colon, "specification clause ':'");
+        requires.push(parse_expr(ts));
+    }
+
+    // ensures: expr
+    if ts.eat(&Token::KwEnsures) {
+        ts.expect(&Token::Colon, "specification clause ':'");
+        ensures.push(parse_expr(ts));
+    }
+
+    Specification { requires, ensures }
 }
 
 pub fn parse_module(ts: &mut Tokens) -> Module {
@@ -205,14 +361,14 @@ fn parse_use_list(ts: &mut Tokens) -> Vec<UseItem> {
         // Parse module path manually for use statements
         let path = parse_mod_path_for_use(ts);
         ts.expect(&Token::Dot, "'.' in use statement");
-        
+
         if ts.eat(&Token::Star) {
             items.push(UseItem::Star { path });
         } else {
             let id = ts.expect_ident("name after path in use");
             items.push(UseItem::Named { path, ident: id });
         }
-        
+
         if !ts.eat(&Token::Comma) {
             break;
         }
@@ -263,7 +419,8 @@ fn parse_mod_path(ts: &mut Tokens) -> ModPath {
 
 /* Expr := Case | Pipe
    Pipe := Or { '>>' Or }       // left-assoc into Expr::Pipe
-   Case := '[' Arm {';' Arm} ']'   Arm := Cond '?' Expr | '_' '?' Expr
+   Case := '[' Arm {';' Arm} ']'
+   Arm := Cond ('?' | '->') Expr | ('_' | 'else') ('?' | '->') Expr
 */
 pub fn parse_expr(ts: &mut Tokens) -> Expr {
     // Case has the lowest precedence; check for it explicitly
@@ -279,7 +436,8 @@ fn parse_case(ts: &mut Tokens) -> Expr {
     let mut default: Option<Expr> = None;
 
     loop {
-        if ts.eat(&Token::Underscore) {
+        // Check for default arm: _ (as identifier) or else keyword
+        if ts.eat(&Token::KwElse) || is_underscore_ident(ts) {
             default = Some(parse_default_arm(ts));
         } else {
             parse_conditional_arm(ts, &mut arms);
@@ -291,18 +449,29 @@ fn parse_case(ts: &mut Tokens) -> Expr {
     }
 
     ts.expect(&Token::RBracket, "closing ']'");
-    let def = default.expect("case block missing default '_' ? expr");
+    let def = default.expect("case block missing default 'else' or '_'");
     Expr::Case {
         arms,
         default: Box::new(def),
     }
 }
 
+/// Check if the next token is the `_` wildcard identifier and consume it
+fn is_underscore_ident(ts: &mut Tokens) -> bool {
+    if let Some(Token::Ident(s)) = ts.peek() {
+        if s == "_" {
+            ts.next();
+            return true;
+        }
+    }
+    false
+}
+
 fn parse_default_arm(ts: &mut Tokens) -> Expr {
     if ts.eat(&Token::QMark) || ts.eat(&Token::Arrow) {
         parse_expr(ts)
     } else {
-        ts.err_here("expected '?' or '->' after '_' in case arm")
+        ts.err_here("expected '?' or '->' after 'else' or '_' in case arm")
     }
 }
 
@@ -435,6 +604,7 @@ fn parse_mul(ts: &mut Tokens) -> Expr {
             (Token::Star, BinOp::Mul),
             (Token::Slash, BinOp::Div),
             (Token::Percent, BinOp::Mod),
+            (Token::KwMod, BinOp::Mod), // 'mod' keyword as alternative to %
         ],
     )
 }
@@ -481,7 +651,7 @@ fn parse_primary(ts: &mut Tokens) -> Expr {
     match ts.next() {
         Some(Token::Number(s)) => parse_number(ts, &s),
         Some(Token::Bool(b)) => Expr::Bool(b),
-        Some(Token::Ident(s)) => Expr::Ident(s),
+        Some(Token::Ident(s)) => parse_qualified_name(ts, s, false),
         Some(Token::At) => parse_algorithm_call(ts),
         Some(Token::LParen) => parse_parenthesized(ts),
         other => ts.err_here(&format!("unexpected token in expression: {:?}", other)),
@@ -495,16 +665,50 @@ fn parse_number(ts: &mut Tokens, s: &str) -> Expr {
     Expr::Number(v)
 }
 
+/// Parse a potentially qualified name: `Name` or `Module.Name` or `Module.Sub.Name`
+/// Returns either an Expr::Ident for simple names or Expr::Call with is_alg flag for qualified calls
+fn parse_qualified_name(ts: &mut Tokens, first: String, is_alg: bool) -> Expr {
+    let mut segments = vec![first];
+
+    // Collect all dot-separated segments
+    while ts.eat(&Token::Dot) {
+        match ts.next() {
+            Some(Token::Ident(s)) => segments.push(s),
+            other => ts.err_here(&format!("expected identifier after '.', got {:?}", other)),
+        }
+    }
+
+    // Join into a qualified name
+    let name = segments.join(".");
+
+    // If it's a qualified name (has dots), treat it as an algorithm reference
+    if segments.len() > 1 {
+        Expr::Call {
+            is_alg: true, // qualified names are always algorithm references
+            name,
+            args: Vec::new(),
+        }
+    } else {
+        // Simple unqualified name
+        if is_alg {
+            Expr::Call {
+                is_alg: true,
+                name,
+                args: Vec::new(),
+            }
+        } else {
+            Expr::Ident(name)
+        }
+    }
+}
+
 fn parse_algorithm_call(ts: &mut Tokens) -> Expr {
     let name = match ts.next() {
         Some(Token::Ident(s)) => s,
         other => ts.err_here(&format!("expected identifier after '@', got {:?}", other)),
     };
-    Expr::Call {
-        is_alg: true,
-        name,
-        args: Vec::new(),
-    }
+    // Handle qualified names after @: @Module.Function
+    parse_qualified_name(ts, name, true)
 }
 
 fn parse_parenthesized(ts: &mut Tokens) -> Expr {

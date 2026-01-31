@@ -1,13 +1,13 @@
-@Quadratic(a,b,c) = @ClassifyRoots(a, b, @Discriminant(a,b,c))
+@Quadratic(a,b,c) := @ClassifyRoots(a, b, @Discriminant(a,b,c))
 
-@Discriminant(a,b,c) = b² - 4ac
+@Discriminant(a,b,c) := b^2 - 4*a*c
 
-@ClassifyRoots(a,b,d) = [ d > 0 ? @RealRoots(a,b,d) ;
-                          d = 0 ? @RepeatedRoot(a,b) ;
-                          _ ? @ComplexRoots(a,b,d) ]
+@ClassifyRoots(a,b,d) := [ d > 0 -> @RealRoots(a,b,d) ;
+                           d = 0 -> @RepeatedRoot(a,b) ;
+                           else  -> @ComplexRoots(a,b,d) ]
 
-@RealRoots(a,b,d) = {(-b + √d)/(2a), (-b - √d)/(2a)}
+@RealRoots(a,b,d) := {(-b + sqrt(d))/(2*a), (-b - sqrt(d))/(2*a)}
 
-@RepeatedRoot(a,b) = {-b/(2a)}
+@RepeatedRoot(a,b) := {-b/(2*a)}
 
-@ComplexRoots(a,b,d) = {(-b + i√(-d))/(2a), (-b - i√(-d))/(2a)}
+@ComplexRoots(a,b,d) := {(-b + i*sqrt(-d))/(2*a), (-b - i*sqrt(-d))/(2*a)}

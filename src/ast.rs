@@ -51,10 +51,45 @@ pub enum BinOp {
     Or,
 }
 
+/// === Type System ===
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Type {
+    /// Basic types
+    Real,         // R or ℝ
+    Natural,      // N or ℕ
+    Integer,      // Z or ℤ
+    Rational,     // Q or ℚ
+    Complex,      // C or ℂ
+    Bool,         // Bool
+
+    /// Parameterized types
+    Set(Box<Type>),              // Set<T>
+    Vec(Box<Type>, Option<u32>), // Vec<T, n> or Vec<T>
+    List(Box<Type>),             // List<T>
+    Option(Box<Type>),           // Option<T>
+    Tuple(Vec<Type>),            // (T1, T2, ...)
+
+    /// Vector space with dimension
+    VecSpace(Box<Type>, u32), // R^3
+
+    /// Named/user-defined types
+    Named(String),
+}
+
+/// Optional specification for algorithms
+#[derive(Debug, Clone)]
+pub struct Specification {
+    pub requires: Vec<Expr>, // Preconditions
+    pub ensures: Vec<Expr>,  // Postconditions
+}
+
 #[derive(Debug, Clone)]
 pub struct AlgorithmDef {
     pub name: String,
-    pub params: Vec<String>,
+    pub params: Vec<(String, Option<Type>)>, // Changed from Vec<String>
+    pub return_type: Option<Type>,            // NEW
+    pub spec: Option<Specification>,          // NEW
     pub body: Expr,
 }
 
@@ -138,4 +173,43 @@ pub fn show_expr(e: &Expr, indent: usize) {
             }
         }
     }
+}
+
+/// Display type in ASCII form
+pub fn show_type(ty: &Type) -> String {
+    match ty {
+        Type::Real => "R".to_string(),
+        Type::Natural => "N".to_string(),
+        Type::Integer => "Z".to_string(),
+        Type::Rational => "Q".to_string(),
+        Type::Complex => "C".to_string(),
+        Type::Bool => "Bool".to_string(),
+        Type::Set(inner) => format!("Set<{}>", show_type(inner)),
+        Type::Vec(inner, Some(n)) => format!("Vec<{}, {}>", show_type(inner), n),
+        Type::Vec(inner, None) => format!("Vec<{}>", show_type(inner)),
+        Type::List(inner) => format!("List<{}>", show_type(inner)),
+        Type::Option(inner) => format!("Option<{}>", show_type(inner)),
+        Type::Tuple(types) => {
+            let types_str = types
+                .iter()
+                .map(show_type)
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("({})", types_str)
+        }
+        Type::VecSpace(base, dim) => format!("{}^{}", show_type(base), dim),
+        Type::Named(name) => name.clone(),
+    }
+}
+
+/// Format parameter list for display
+pub fn show_params(params: &[(String, Option<Type>)]) -> String {
+    params
+        .iter()
+        .map(|(name, ty)| match ty {
+            Some(t) => format!("{}: {}", name, show_type(t)),
+            None => name.clone(),
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }

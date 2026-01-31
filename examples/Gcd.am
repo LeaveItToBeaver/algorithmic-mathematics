@@ -5,13 +5,13 @@ use Nat.P
 use A.IsZero
 export Mod, GCD
 
-@Mod(a,b) =
-  [ b = 0   ? 0;
-    a < b   ? a;
-    _       ? @Mod(a - b, b)
+@Mod(a,b) :=
+  [ b = 0 -> 0;
+    a < b -> a;
+    else  -> @Mod(a - b, b)
   ]
 
-@GCD(a,b) =
-  [ IsZero(b) ? a; 
-    _         ? @GCD(b, @Mod(a,b))
+@GCD(a,b) :=
+  [ IsZero(b) -> a; 
+    else      -> @GCD(b, @Mod(a,b))
   ]

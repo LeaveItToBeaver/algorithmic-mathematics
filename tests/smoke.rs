@@ -10,6 +10,6 @@ fn run(file: &str, call: &str) -> String {
 
 #[test]
 fn add_works() {
-    let s = run("examples/add.am", "Add(1,4)");
+    let s = run("examples/Nat.am", "Add(1,4)");
     assert!(s.trim().ends_with("= 5"));
 }

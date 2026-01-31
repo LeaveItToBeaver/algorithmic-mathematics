@@ -5,7 +5,7 @@ use Nat.P
 use Arith.Mul
 export Fact
 
-@Fact(n) =
-  [ n = 0 ? 1;
-    _     ? @Mul(n, @Fact(P(n)))
+@Fact(n) :=
+  [ n = 0 -> 1;
+    else  -> @Mul(n, @Fact(P(n)))
   ]
