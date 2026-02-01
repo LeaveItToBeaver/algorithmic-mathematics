@@ -1,7 +1,7 @@
 use core::f64;
 use std::collections::HashMap;
 
-use crate::ast::{AlgorithmDef, BinOp, Expr, Type, UnOp, Module, UseItem};
+use crate::ast::{AlgorithmDef, BinOp, Expr, Module, Type, UnOp, UseItem};
 use crate::builtins::call_builtin;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -9,7 +9,7 @@ pub enum Value {
     Number(f64),
     Bool(bool),
     String(String),
-    Set(Vec<Value>),   // Using Vec for ordered iteration; duplicates removed on creation
+    Set(Vec<Value>), // Using Vec for ordered iteration; duplicates removed on creation
     List(Vec<Value>),
 }
 
@@ -20,7 +20,11 @@ impl std::fmt::Display for Value {
                 if x.is_nan() {
                     write!(f, "NaN")
                 } else if x.is_infinite() {
-                    if *x > 0.0 { write!(f, "∞") } else { write!(f, "-∞") }
+                    if *x > 0.0 {
+                        write!(f, "∞")
+                    } else {
+                        write!(f, "-∞")
+                    }
                 } else if x.fract() == 0.0 && x.abs() < 1e15 {
                     write!(f, "{}", *x as i64)
                 } else {
@@ -32,7 +36,9 @@ impl std::fmt::Display for Value {
             Value::Set(elems) => {
                 write!(f, "{{")?;
                 for (i, e) in elems.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", e)?;
                 }
                 write!(f, "}}")
@@ -40,7 +46,9 @@ impl std::fmt::Display for Value {
             Value::List(elems) => {
                 write!(f, "[")?;
                 for (i, e) in elems.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", e)?;
                 }
                 write!(f, "]")
@@ -80,7 +88,7 @@ impl Value {
             other => Err(format!("expected list, got {}", other.type_name())),
         }
     }
-    
+
     /// Get the type name for error messages
     pub fn type_name(&self) -> &'static str {
         match self {
@@ -133,7 +141,7 @@ impl Env {
     fn set(&mut self, name: String, val: Value) {
         self.vars.insert(name, val);
     }
-    
+
     /// Create a new environment with an additional binding (for let expressions)
     fn with_binding(&self, name: String, val: Value) -> Self {
         let mut new_vars = self.vars.clone();
@@ -155,13 +163,17 @@ impl<'a> World<'a> {
         for d in defs {
             algs.insert(d.name.clone(), d);
         }
-        Self { 
+        Self {
             algs,
-            symbols: HashMap::new()
+            symbols: HashMap::new(),
         }
     }
-    
-    pub fn build_symbol_table(&mut self, entry_module: &Module, all_modules: &HashMap<String, Module>) {
+
+    pub fn build_symbol_table(
+        &mut self,
+        entry_module: &Module,
+        all_modules: &HashMap<String, Module>,
+    ) {
         // Build alias map from imports: alias -> module_name
         let mut aliases = HashMap::new();
         for import in &entry_module.imports {
@@ -173,17 +185,16 @@ impl<'a> World<'a> {
                 aliases.insert(module_name.clone(), module_name);
             }
         }
-        
+
         // Build symbol table from use statements
         for use_item in &entry_module.uses {
             match use_item {
                 UseItem::Named { path, ident } => {
                     let module_ref = path.segments.join(".");
-                    
+
                     // Resolve alias if present
-                    let actual_module = aliases.get(&module_ref)
-                        .unwrap_or(&module_ref);
-                    
+                    let actual_module = aliases.get(&module_ref).unwrap_or(&module_ref);
+
                     let qualified_name = format!("{}.{}", actual_module, ident);
                     self.symbols.insert(ident.clone(), qualified_name);
                 }
@@ -192,15 +203,17 @@ impl<'a> World<'a> {
                 }
             }
         }
-        
+
         // Also add local (current module) functions with unqualified names
         let current_module = &entry_module.name;
         for (qualified_name, _) in &self.algs {
-            if let Some(unqualified) = qualified_name.strip_prefix(&format!("{}.", current_module)) {
-                self.symbols.insert(unqualified.to_string(), qualified_name.clone());
+            if let Some(unqualified) = qualified_name.strip_prefix(&format!("{}.", current_module))
+            {
+                self.symbols
+                    .insert(unqualified.to_string(), qualified_name.clone());
             }
         }
-        
+
         // Add all exported symbols from imported modules to the symbol table
         for import in &entry_module.imports {
             let module_name = import.path.segments.join(".");
@@ -213,7 +226,6 @@ impl<'a> World<'a> {
                 }
             }
         }
-        
     }
 }
 
@@ -226,13 +238,15 @@ fn call_name<'a>(
 ) -> Result<Value, String> {
     // Resolve unqualified names using symbol table
     let resolved_name = world.symbols.get(name).map(|s| s.as_str()).unwrap_or(name);
-    
+
     // If it's an algorithm (explicit @ or known by name), run that algorithm body
     if is_alg || world.algs.contains_key(resolved_name) {
-        let alg = world
-            .algs
-            .get(resolved_name)
-            .ok_or_else(|| format!("unknown algorithm: {} (resolved as {})", name, resolved_name))?;
+        let alg = world.algs.get(resolved_name).ok_or_else(|| {
+            format!(
+                "unknown algorithm: {} (resolved as {})",
+                name, resolved_name
+            )
+        })?;
         let mut local = Env::with_params(&alg.params, &vals)?;
         return eval_expr(world, &mut local, &alg.body);
     }
@@ -291,14 +305,14 @@ pub fn eval_expr<'a>(world: &World<'a>, env: &mut Env, e: &Expr) -> Result<Value
             }
             Ok(val)
         }
-        
+
         // Let binding: evaluate value, extend env, evaluate body
         Let { name, value, body } => {
             let val = eval_expr(world, env, value)?;
             let mut new_env = env.with_binding(name.clone(), val);
             eval_expr(world, &mut new_env, body)
         }
-        
+
         // Set literal: evaluate all elements, deduplicate
         Set(elements) => {
             let mut vals = Vec::new();
@@ -311,7 +325,7 @@ pub fn eval_expr<'a>(world: &World<'a>, env: &mut Env, e: &Expr) -> Result<Value
             }
             Ok(Value::Set(vals))
         }
-        
+
         // List literal: evaluate all elements
         List(elements) => {
             let mut vals = Vec::new();
@@ -320,7 +334,7 @@ pub fn eval_expr<'a>(world: &World<'a>, env: &mut Env, e: &Expr) -> Result<Value
             }
             Ok(Value::List(vals))
         }
-        
+
         // String literal
         String(s) => Ok(Value::String(s.clone())),
     }

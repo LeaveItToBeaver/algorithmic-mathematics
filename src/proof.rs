@@ -12,7 +12,11 @@ use crate::eval::{Value, World};
 /// - If `requires`/`ensures` exist, checks them as boolean goals.
 ///
 /// If SymPy isn't installed, we return a helpful error.
-pub fn prove_call_with_sympy<'a>(world: &World<'a>, defs: &'a [AlgorithmDef], call: &Expr) -> Result<(), String> {
+pub fn prove_call_with_sympy<'a>(
+    world: &World<'a>,
+    defs: &'a [AlgorithmDef],
+    call: &Expr,
+) -> Result<(), String> {
     let (call_name, args) = match call {
         Expr::Call { name, args, .. } => (name.as_str(), args.as_slice()),
         other => {
@@ -36,9 +40,9 @@ pub fn prove_call_with_sympy<'a>(world: &World<'a>, defs: &'a [AlgorithmDef], ca
         algs.insert(d.name.as_str(), d);
     }
 
-    let target = algs
-        .get(resolved_name)
-        .ok_or_else(|| format!("proof mode: unknown algorithm '{call_name}' (resolved as '{resolved_name}')"))?;
+    let target = algs.get(resolved_name).ok_or_else(|| {
+        format!("proof mode: unknown algorithm '{call_name}' (resolved as '{resolved_name}')")
+    })?;
 
     // Evaluate call arguments in *run* semantics only to get concrete values to feed SymPy.
     // We require them to be integers so proof-mode stays exact.
@@ -84,9 +88,7 @@ pub fn prove_call_with_sympy<'a>(world: &World<'a>, defs: &'a [AlgorithmDef], ca
             child.wait_with_output()
         })
         .map_err(|e| {
-            format!(
-                "proof mode requires Python (and SymPy). Failed to run '{python}': {e}"
-            )
+            format!("proof mode requires Python (and SymPy). Failed to run '{python}': {e}")
         })?;
 
     if !out.status.success() {
@@ -174,7 +176,7 @@ fn build_sympy_script<'a>(
                 return Err(format!(
                     "proof mode currently only supports integer numeric args; got {}",
                     other.type_name()
-                ))
+                ));
             }
         };
         py.push_str(&format!("{py_param} = {rhs}\n"));
@@ -397,7 +399,8 @@ fn translate_expr<'a>(
         Expr::Number(x) => {
             if !is_int_like(*x) {
                 return Err(format!(
-                    "proof mode currently only supports integer literals; got {x}. Use --mode run."));
+                    "proof mode currently only supports integer literals; got {x}. Use --mode run."
+                ));
             }
             Ok(format!("sp.Integer({})", *x as i64))
         }
@@ -625,9 +628,5 @@ fn sanitize_ident(name: &str) -> String {
             out.push('_');
         }
     }
-    if out.is_empty() {
-        "_".to_string()
-    } else {
-        out
-    }
+    if out.is_empty() { "_".to_string() } else { out }
 }

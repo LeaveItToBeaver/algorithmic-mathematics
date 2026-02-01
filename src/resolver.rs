@@ -43,10 +43,10 @@ impl Loader {
                 }
             }
         }
-        
+
         // Validate exports - ensure all exported symbols actually exist
         self.validate_exports(&defs)?;
-        
+
         Ok(Resolved { defs })
     }
 
@@ -54,7 +54,7 @@ impl Loader {
         if !self.seen.insert(name.to_string()) {
             return Ok(()); // already
         }
-        
+
         // If module was already loaded (e.g., entry module), just recurse for its imports
         if let Some(m) = self.modules.get(name).cloned() {
             for imp in m.imports.iter() {
@@ -63,7 +63,7 @@ impl Loader {
             }
             return Ok(());
         }
-        
+
         // find file for module: <name>.am in any search path or <name>/mod.am
         let mut tried = Vec::new();
         for base in &self.search_paths {
@@ -102,7 +102,7 @@ impl Loader {
             tried
         ))
     }
-    
+
     fn validate_exports(&self, defs: &[AlgorithmDef]) -> Result<(), String> {
         // Create a set of available definitions by module
         let mut available_defs: HashMap<String, HashSet<String>> = HashMap::new();
@@ -116,7 +116,7 @@ impl Loader {
                     .insert(def_name.to_string());
             }
         }
-        
+
         // Check each module's exports
         for (module_name, module) in &self.modules {
             for export_name in &module.exports {
@@ -135,7 +135,7 @@ impl Loader {
                 }
             }
         }
-        
+
         Ok(())
     }
 }
