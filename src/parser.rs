@@ -417,17 +417,61 @@ fn parse_mod_path(ts: &mut Tokens) -> ModPath {
     ModPath { segments: segs }
 }
 
-/* Expr := Case | Pipe
+/* Expr := Let | Case | Pipe
+   Let  := 'let' Ident '=' Expr 'in' Expr
    Pipe := Or { '>>' Or }       // left-assoc into Expr::Pipe
    Case := '[' Arm {';' Arm} ']'
    Arm := Cond ('?' | '->') Expr | ('_' | 'else') ('?' | '->') Expr
 */
 pub fn parse_expr(ts: &mut Tokens) -> Expr {
-    // Case has the lowest precedence; check for it explicitly
+    // Let binding has lowest precedence
+    if let Some(Token::KwLet) = ts.peek() {
+        return parse_let(ts);
+    }
+    // Case has the next lowest precedence; check for it explicitly
     if let Some(Token::LBracket) = ts.peek() {
         return parse_case(ts);
     }
+    // Set literal: { expr, expr, ... }
+    if let Some(Token::LBrace) = ts.peek() {
+        return parse_set(ts);
+    }
     parse_pipe(ts)
+}
+
+/// Parse let binding: `let x = expr in body`
+fn parse_let(ts: &mut Tokens) -> Expr {
+    ts.expect(&Token::KwLet, "let keyword");
+    let name = ts.expect_ident("variable name in let binding");
+    ts.expect(&Token::Equal, "'=' in let binding");
+    let value = parse_expr(ts);
+    ts.expect(&Token::KwIn, "'in' keyword after let value");
+    let body = parse_expr(ts);
+    Expr::Let {
+        name,
+        value: Box::new(value),
+        body: Box::new(body),
+    }
+}
+
+/// Parse set literal: `{expr, expr, ...}` or empty `{}`
+fn parse_set(ts: &mut Tokens) -> Expr {
+    ts.expect(&Token::LBrace, "set '{'");
+    let mut elements = Vec::new();
+    
+    if !matches!(ts.peek(), Some(Token::RBrace)) {
+        elements.push(parse_expr(ts));
+        while ts.eat(&Token::Comma) {
+            // Allow trailing comma
+            if matches!(ts.peek(), Some(Token::RBrace)) {
+                break;
+            }
+            elements.push(parse_expr(ts));
+        }
+    }
+    
+    ts.expect(&Token::RBrace, "closing '}'");
+    Expr::Set(elements)
 }
 
 fn parse_case(ts: &mut Tokens) -> Expr {
@@ -506,10 +550,10 @@ fn parse_question_arm(ts: &mut Tokens, arms: &mut Vec<(Expr, Expr)>, cond: Expr)
 }
 
 fn parse_pipe(ts: &mut Tokens) -> Expr {
-    let head = parse_or(ts);
+    let head = parse_implies(ts);
     let mut steps: Vec<Expr> = Vec::new();
     while ts.eat(&Token::DblGt) {
-        let step = parse_or(ts);
+        let step = parse_implies(ts);
         steps.push(step);
     }
     if steps.is_empty() {
@@ -519,6 +563,21 @@ fn parse_pipe(ts: &mut Tokens) -> Expr {
             head: Box::new(head),
             steps,
         }
+    }
+}
+
+/// Lowest-precedence boolean implication: A -> B, right-associative.
+fn parse_implies(ts: &mut Tokens) -> Expr {
+    let left = parse_or(ts);
+    if ts.eat(&Token::Arrow) {
+        let right = parse_implies(ts);
+        Expr::Bin {
+            op: BinOp::Implies,
+            left: Box::new(left),
+            right: Box::new(right),
+        }
+    } else {
+        left
     }
 }
 
@@ -651,6 +710,7 @@ fn parse_primary(ts: &mut Tokens) -> Expr {
     match ts.next() {
         Some(Token::Number(s)) => parse_number(ts, &s),
         Some(Token::Bool(b)) => Expr::Bool(b),
+        Some(Token::String(s)) => Expr::String(s),
         Some(Token::Ident(s)) => parse_qualified_name(ts, s, false),
         Some(Token::At) => parse_algorithm_call(ts),
         Some(Token::LParen) => parse_parenthesized(ts),

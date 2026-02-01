@@ -1,18 +1,25 @@
 use std::fs;
 
-use std::path::Path;
 use crate::ast::{AlgorithmDef, show_expr, show_params};
 use crate::error_handling::safe_parse;
-use crate::eval::{Env, Value, World, eval_expr};
+use crate::eval::{Env, World, eval_expr};
 use crate::lexer::lex;
 use crate::normalize::normalize_unicode_to_ascii;
 use crate::parser::{Tokens, parse_expr, parse_module};
+use crate::proof;
 use crate::resolver::Loader;
-
+use std::path::Path;
 
 struct FileProcessorConfig {
     print_ast: bool,
     call_expr: Option<String>,
+    mode: ExecMode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExecMode {
+    Run,
+    Proof,
 }
 
 impl FileProcessorConfig {
@@ -20,6 +27,7 @@ impl FileProcessorConfig {
         Self {
             print_ast: false,
             call_expr: None,
+            mode: ExecMode::Run,
         }
     }
 
@@ -38,6 +46,7 @@ impl FileProcessorConfig {
                 Ok(i + 1)
             }
             "--call" => self.parse_call_arg(args, i),
+            "--mode" => self.parse_mode_arg(args, i),
             other => Err(format!("unknown flag: {}", other)),
         }
     }
@@ -47,6 +56,22 @@ impl FileProcessorConfig {
             return Err("--call requires an expression, e.g. --call \"SafeDiv(1,0)\"".to_string());
         }
         self.call_expr = Some(args[i + 1].clone());
+        Ok(i + 2)
+    }
+
+    fn parse_mode_arg(&mut self, args: &[String], i: usize) -> Result<usize, String> {
+        if i + 1 >= args.len() {
+            return Err("--mode requires 'run' or 'proof'".to_string());
+        }
+        self.mode = match args[i + 1].as_str() {
+            "run" => ExecMode::Run,
+            "proof" => ExecMode::Proof,
+            other => {
+                return Err(format!(
+                    "unknown mode '{other}' (expected 'run' or 'proof')"
+                ));
+            }
+        };
         Ok(i + 2)
     }
 }
@@ -67,12 +92,13 @@ pub fn process_file(mut args: Vec<String>) -> Result<(), String> {
     let parent_dir = file_path.parent().unwrap_or(Path::new("."));
     let search_paths = vec![parent_dir.to_path_buf()];
     let mut loader = Loader::new(search_paths);
-    
-    // Resolve all dependencies  
+
+    // Resolve all dependencies
     let entry_module = module.clone(); // Keep the original module for symbol table
-    let resolved = loader.load_entry(file_path, module)
+    let resolved = loader
+        .load_entry(file_path, module)
         .map_err(|e| format!("Module resolution failed: {}", e))?;
-    
+
     let defs = resolved.defs;
     if defs.is_empty() {
         return Err(format!("No algorithms found in {}", path));
@@ -86,7 +112,14 @@ pub fn process_file(mut args: Vec<String>) -> Result<(), String> {
     }
 
     if let Some(call_src) = config.call_expr {
-        execute_call(&call_src, &defs, &src, &entry_module, &loader.modules)?;
+        execute_call(
+            &call_src,
+            &defs,
+            &src,
+            &entry_module,
+            &loader.modules,
+            config.mode,
+        )?;
     } else if !config.print_ast {
         print_summary(&defs, &path);
     }
@@ -102,7 +135,14 @@ fn print_ast(defs: &[AlgorithmDef]) {
     }
 }
 
-fn execute_call(call_src: &str, defs: &[AlgorithmDef], src: &str, entry_module: &crate::ast::Module, all_modules: &std::collections::HashMap<String, crate::ast::Module>) -> Result<(), String> {
+fn execute_call(
+    call_src: &str,
+    defs: &[AlgorithmDef],
+    src: &str,
+    entry_module: &crate::ast::Module,
+    all_modules: &std::collections::HashMap<String, crate::ast::Module>,
+    mode: ExecMode,
+) -> Result<(), String> {
     let norm = normalize_unicode_to_ascii(call_src);
     let toks = lex(&norm);
     let mut t2 = Tokens::new_with_src(toks, src);
@@ -110,13 +150,17 @@ fn execute_call(call_src: &str, defs: &[AlgorithmDef], src: &str, entry_module: 
     let call = safe_parse(|| parse_expr(&mut t2))?;
     let mut world = World::new(defs);
     world.build_symbol_table(entry_module, all_modules);
-    let mut env = Env::base();
 
-    let val = eval_expr(&world, &mut env, &call).map_err(|e| format!("runtime error: {e}"))?;
-
-    match val {
-        Value::Number(x) => println!("= {}", x),
-        Value::Bool(b) => println!("= {}", b),
+    match mode {
+        ExecMode::Run => {
+            let mut env = Env::base();
+            let val =
+                eval_expr(&world, &mut env, &call).map_err(|e| format!("runtime error: {e}"))?;
+            println!("= {}", val);
+        }
+        ExecMode::Proof => {
+            proof::prove_call_with_sympy(&world, defs, &call)?;
+        }
     }
 
     Ok(())
@@ -128,7 +172,7 @@ fn print_summary(defs: &[AlgorithmDef], path: &str) {
         println!("  {}({})", d.name, show_params(&d.params));
     }
     println!(
-        "Try:  cargo run -- {} --call \"{}(1,0)\"",
-        path, defs[0].name
+        "Try:  cargo run -- {} --call \"{}(1,0)\"\n      cargo run -- {} --mode proof --call \"{}(1,0)\"",
+        path, defs[0].name, path, defs[0].name
     );
 }

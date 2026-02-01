@@ -47,6 +47,25 @@ cargo run -- examples/<example-file>
 ./target/release/algorithmic-mathematics examples/<example-file>
 ```
 
+### Proof Mode (external checker)
+
+`amlang` supports a pragmatic `--mode proof` execution mode that runs an **external checker** on a concrete call.
+Today this uses **SymPy** via `python3`.
+
+- Install dependency (pick one):
+	- System package manager (openSUSE example): `sudo zypper install python313-sympy` (or run `zypper search sympy` to find the right package)
+	- Virtualenv (recommended if you hit PEP 668 `externally-managed-environment`):
+		- `python3 -m venv .venv`
+		- `. .venv/bin/activate`
+		- `python -m pip install sympy`
+- Run:
+	- If SymPy is installed system-wide: `cargo run -- examples/quadratic.am --mode proof --call "Quadratic(1,-5,6)"`
+	- If using a venv without activating it: `AMLANG_PYTHON=.venv/bin/python cargo run -- examples/quadratic.am --mode proof --call "Quadratic(1,-5,6)"`
+
+Notes:
+- Proof mode currently expects **integer numeric arguments/literals** for exact checking.
+- If an algorithm has `requires:` / `ensures:` clauses, proof mode will check them.
+
 > If your CLI accepts flags (e.g., `--trace`, `--pretty`, `--json`), they can be passed after `--`. Use `--help` to see the authoritative options supported by the current build.
 
 ### Test

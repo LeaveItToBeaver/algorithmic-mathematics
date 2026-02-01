@@ -8,19 +8,87 @@ use crate::builtins::call_builtin;
 pub enum Value {
     Number(f64),
     Bool(bool),
+    String(String),
+    Set(Vec<Value>),   // Using Vec for ordered iteration; duplicates removed on creation
+    List(Vec<Value>),
+}
+
+impl std::fmt::Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::Number(x) => {
+                if x.is_nan() {
+                    write!(f, "NaN")
+                } else if x.is_infinite() {
+                    if *x > 0.0 { write!(f, "∞") } else { write!(f, "-∞") }
+                } else if x.fract() == 0.0 && x.abs() < 1e15 {
+                    write!(f, "{}", *x as i64)
+                } else {
+                    write!(f, "{}", x)
+                }
+            }
+            Value::Bool(b) => write!(f, "{}", b),
+            Value::String(s) => write!(f, "\"{}\"", s),
+            Value::Set(elems) => {
+                write!(f, "{{")?;
+                for (i, e) in elems.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}", e)?;
+                }
+                write!(f, "}}")
+            }
+            Value::List(elems) => {
+                write!(f, "[")?;
+                for (i, e) in elems.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}", e)?;
+                }
+                write!(f, "]")
+            }
+        }
+    }
 }
 
 impl Value {
     pub fn as_f64(&self) -> Result<f64, String> {
         match self {
             Value::Number(x) => Ok(*x),
-            other => Err(format!("expected number, got {:?}", other)),
+            other => Err(format!("expected number, got {}", other.type_name())),
         }
     }
     pub fn as_bool(&self) -> Result<bool, String> {
         match self {
             Value::Bool(b) => Ok(*b),
-            other => Err(format!("expected bool, got {:?}", other)),
+            other => Err(format!("expected bool, got {}", other.type_name())),
+        }
+    }
+    pub fn as_string(&self) -> Result<&str, String> {
+        match self {
+            Value::String(s) => Ok(s),
+            other => Err(format!("expected string, got {}", other.type_name())),
+        }
+    }
+    pub fn as_set(&self) -> Result<&Vec<Value>, String> {
+        match self {
+            Value::Set(v) => Ok(v),
+            other => Err(format!("expected set, got {}", other.type_name())),
+        }
+    }
+    pub fn as_list(&self) -> Result<&Vec<Value>, String> {
+        match self {
+            Value::List(v) => Ok(v),
+            other => Err(format!("expected list, got {}", other.type_name())),
+        }
+    }
+    
+    /// Get the type name for error messages
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            Value::Number(_) => "number",
+            Value::Bool(_) => "bool",
+            Value::String(_) => "string",
+            Value::Set(_) => "set",
+            Value::List(_) => "list",
         }
     }
 }
@@ -62,9 +130,16 @@ impl Env {
     fn get(&self, name: &str) -> Option<&Value> {
         self.vars.get(name)
     }
-    // fn set(&mut self, name: String, val: Value) {
-    //     self.vars.insert(name, val);
-    // }
+    fn set(&mut self, name: String, val: Value) {
+        self.vars.insert(name, val);
+    }
+    
+    /// Create a new environment with an additional binding (for let expressions)
+    fn with_binding(&self, name: String, val: Value) -> Self {
+        let mut new_vars = self.vars.clone();
+        new_vars.insert(name, val);
+        Self { vars: new_vars }
+    }
 }
 
 pub struct World<'a> {
@@ -216,6 +291,38 @@ pub fn eval_expr<'a>(world: &World<'a>, env: &mut Env, e: &Expr) -> Result<Value
             }
             Ok(val)
         }
+        
+        // Let binding: evaluate value, extend env, evaluate body
+        Let { name, value, body } => {
+            let val = eval_expr(world, env, value)?;
+            let mut new_env = env.with_binding(name.clone(), val);
+            eval_expr(world, &mut new_env, body)
+        }
+        
+        // Set literal: evaluate all elements, deduplicate
+        Set(elements) => {
+            let mut vals = Vec::new();
+            for elem in elements {
+                let v = eval_expr(world, env, elem)?;
+                // Simple deduplication (keeps first occurrence)
+                if !vals.contains(&v) {
+                    vals.push(v);
+                }
+            }
+            Ok(Value::Set(vals))
+        }
+        
+        // List literal: evaluate all elements
+        List(elements) => {
+            let mut vals = Vec::new();
+            for elem in elements {
+                vals.push(eval_expr(world, env, elem)?);
+            }
+            Ok(Value::List(vals))
+        }
+        
+        // String literal
+        String(s) => Ok(Value::String(s.clone())),
     }
 }
 
@@ -236,6 +343,7 @@ fn eval_binary_operation(op: BinOp, lv: Value, rv: Value) -> Result<Value, Strin
         Ge => Ok(Value::Bool(lv.as_f64()? >= rv.as_f64()?)),
         And => Ok(Value::Bool(lv.as_bool()? && rv.as_bool()?)),
         Or => Ok(Value::Bool(lv.as_bool()? || rv.as_bool()?)),
+        Implies => Ok(Value::Bool(!lv.as_bool()? || rv.as_bool()?)),
     }
 }
 

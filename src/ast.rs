@@ -2,6 +2,7 @@
 pub enum Expr {
     Number(f64),
     Bool(bool),
+    String(String),
     Ident(String),
     Call {
         is_alg: bool,
@@ -25,6 +26,16 @@ pub enum Expr {
         head: Box<Expr>,
         steps: Vec<Expr>,
     },
+    /// Let binding: `let x = expr in body`
+    Let {
+        name: String,
+        value: Box<Expr>,
+        body: Box<Expr>,
+    },
+    /// Set literal: `{1, 2, 3}`
+    Set(Vec<Expr>),
+    /// List literal: `[1, 2, 3]` - but we use `list(1, 2, 3)` since [] is for case
+    List(Vec<Expr>),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -49,6 +60,7 @@ pub enum BinOp {
     Ge,
     And,
     Or,
+    Implies,
 }
 
 /// === Type System ===
@@ -140,6 +152,7 @@ pub fn show_expr(e: &Expr, indent: usize) {
     match e {
         Expr::Number(v) => println!("{pad}Number({v})"),
         Expr::Bool(b) => println!("{pad}Bool({b})"),
+        Expr::String(s) => println!("{pad}String(\"{s}\")"),
         Expr::Ident(s) => println!("{pad}Ident({s})"),
         Expr::Call { is_alg, name, args } => {
             println!("{pad}Call is_alg={is_alg} name={name}");
@@ -171,6 +184,26 @@ pub fn show_expr(e: &Expr, indent: usize) {
             for s in steps {
                 show_expr(s, indent + 1);
             }
+        }
+        Expr::Let { name, value, body } => {
+            println!("{pad}Let {name} =");
+            show_expr(value, indent + 1);
+            println!("{pad}in");
+            show_expr(body, indent + 1);
+        }
+        Expr::Set(elems) => {
+            println!("{pad}Set {{");
+            for e in elems {
+                show_expr(e, indent + 1);
+            }
+            println!("{pad}}}");
+        }
+        Expr::List(elems) => {
+            println!("{pad}List [");
+            for e in elems {
+                show_expr(e, indent + 1);
+            }
+            println!("{pad}]");
         }
     }
 }

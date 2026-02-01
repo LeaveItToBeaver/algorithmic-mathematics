@@ -8,6 +8,7 @@ mod file_processor;
 pub mod lexer;
 mod normalize;
 pub mod parser;
+mod proof;
 mod render;
 mod repl;
 pub mod resolver;

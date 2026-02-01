@@ -3,7 +3,7 @@ use rustyline::error::ReadlineError;
 
 use crate::ast::{AlgorithmDef, show_params};
 use crate::error_handling::safe_parse;
-use crate::eval::{Env, Value, World, eval_expr};
+use crate::eval::{Env, World, eval_expr};
 use crate::lexer::lex;
 use crate::normalize::normalize_unicode_to_ascii;
 use crate::parser::{Tokens, parse_alg_def, parse_expr};
@@ -154,8 +154,7 @@ impl Repl {
         let mut env = Env::base();
 
         match eval_expr(&world, &mut env, expr) {
-            Ok(Value::Number(n)) => println!("= {}", n),
-            Ok(Value::Bool(b)) => println!("= {}", b),
+            Ok(val) => println!("= {}", val),
             Err(e) => eprintln!("runtime error: {e}"),
         }
     }

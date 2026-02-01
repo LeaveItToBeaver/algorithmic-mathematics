@@ -54,6 +54,16 @@ impl Loader {
         if !self.seen.insert(name.to_string()) {
             return Ok(()); // already
         }
+        
+        // If module was already loaded (e.g., entry module), just recurse for its imports
+        if let Some(m) = self.modules.get(name).cloned() {
+            for imp in m.imports.iter() {
+                let dep = imp.path.segments.join(".");
+                self.visit(&dep)?;
+            }
+            return Ok(());
+        }
+        
         // find file for module: <name>.am in any search path or <name>/mod.am
         let mut tried = Vec::new();
         for base in &self.search_paths {
