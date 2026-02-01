@@ -1,0 +1,85 @@
+// Result type - for computations that can fail with an error
+// Similar to Rust's Result<T, E>
+
+// Define the Result ADT
+type Result = Ok(T) | Err(E)
+
+// Unwrap a result or return a default
+@unwrap_or(res, default) :=
+    match res with
+    | Ok(x) -> x
+    | Err(_) -> default
+    end
+
+// Unwrap a result or apply a recovery function to the error
+@unwrap_or_else(res, f) :=
+    match res with
+    | Ok(x) -> x
+    | Err(e) -> f(e)
+    end
+
+// Check if result is Ok
+@is_ok(res) :=
+    match res with
+    | Ok(_) -> true
+    | Err(_) -> false
+    end
+
+// Check if result is Err
+@is_err(res) :=
+    match res with
+    | Ok(_) -> false
+    | Err(_) -> true
+    end
+
+// Map a function over a successful result
+@map(res, f) :=
+    match res with
+    | Ok(x) -> Ok(f(x))
+    | Err(e) -> Err(e)
+    end
+
+// Map a function over an error
+@map_err(res, f) :=
+    match res with
+    | Ok(x) -> Ok(x)
+    | Err(e) -> Err(f(e))
+    end
+
+// Chain results (bind/flatMap)
+@and_then(res, f) :=
+    match res with
+    | Ok(x) -> f(x)
+    | Err(e) -> Err(e)
+    end
+
+// Safe division - returns Err with divisor if dividing by zero
+@safe_div(a, b) :=
+    match b == 0 with
+    | true -> Err(b)
+    | false -> Ok(a / b)
+    end
+
+// Validate that a number is positive
+@require_positive(n) :=
+    match n > 0 with
+    | true -> Ok(n)
+    | false -> Err(n)
+    end
+
+// Example: Chain safe operations
+// Compute: (100 / x) where x must be positive
+@safe_compute(x) :=
+    @and_then(
+        @require_positive(x),
+        \n -> @safe_div(100, n)
+    )
+
+// Tests
+@test_ok() := @unwrap_or(Ok(42), 0)
+@test_err() := @unwrap_or(Err(404), -1)
+@test_err_recover() := @unwrap_or_else(Err(10), \e -> e * 2)
+@test_map_ok() := @unwrap_or(@map(Ok(5), \x -> x * x), 0)
+@test_safe_compute_10() := @unwrap_or(@safe_compute(10), -999)
+@test_safe_compute_0() := @unwrap_or(@safe_compute(0), -999)
+@test_safe_compute_neg() := @unwrap_or(@safe_compute(-5), -999)

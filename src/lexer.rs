@@ -56,7 +56,13 @@ fn keyword(text: &str) -> Option<Token> {
         "ensures" => Some(Token::KwEnsures),
         "true" => Some(Token::Bool(true)),
         "false" => Some(Token::Bool(false)),
-        "mod" => Some(Token::KwMod),  // modulo keyword (alternative to %)
+        "mod" => Some(Token::KwMod),
+        // NEW: ADT and pattern matching keywords
+        "type" => Some(Token::KwType),
+        "match" => Some(Token::KwMatch),
+        "with" => Some(Token::KwWith),
+        "end" => Some(Token::KwEnd),
+        "fn" => Some(Token::KwFn),
         _ => None,
     }
 }
@@ -65,6 +71,7 @@ fn keyword(text: &str) -> Option<Token> {
 const TWO_CHAR_OPS: &[((char, char), Token)] = &[
     ((':', '='), Token::Defines),
     (('-', '>'), Token::Arrow),
+    (('=', '>'), Token::FatArrow), // NEW: for lambdas
     (('|', '|'), Token::DblPipe),
     (('&', '&'), Token::AmpAmp),
     (('<', '='), Token::Le),
@@ -85,7 +92,6 @@ const SINGLE_CHAR_OPS: &[(char, Token)] = &[
     ('}', Token::RBrace),
     (',', Token::Comma),
     (';', Token::Semicolon),
-    // ('_', Token::Underscore),  // Now treated as ident start
     ('=', Token::Equal),
     ('|', Token::Pipe),
     ('?', Token::QMark),
@@ -100,6 +106,7 @@ const SINGLE_CHAR_OPS: &[(char, Token)] = &[
     ('.', Token::Dot),
     (':', Token::Colon),
     ('%', Token::Percent),
+    ('\\', Token::Backslash), // NEW: for lambdas
 ];
 
 pub fn lex(input: &str) -> Vec<TokSpan> {
@@ -128,7 +135,7 @@ pub fn lex(input: &str) -> Vec<TokSpan> {
                 i = consume_block_content(bytes, i);
                 continue;
             }
-            
+
             // Two-char operators
             if let Some(tok) = lookup_two_char(a, c) {
                 out.push(span(tok, i, i + 2));
@@ -205,7 +212,7 @@ fn skip_line_comment(bytes: &[u8], start: usize, len: usize) -> usize {
 fn lex_string(bytes: &[u8], start: usize, len: usize) -> (Token, usize) {
     let mut i = start + 1; // skip opening quote
     let mut s = String::new();
-    
+
     while i < len {
         let ch = bytes[i] as char;
         if ch == '"' {
@@ -228,7 +235,7 @@ fn lex_string(bytes: &[u8], start: usize, len: usize) -> (Token, usize) {
         s.push(ch);
         i += 1;
     }
-    
+
     (Token::String(s), i) // unterminated string
 }
 
@@ -244,12 +251,12 @@ fn lex_identifier(input: &str, bytes: &[u8], start: usize, len: usize) -> (Token
 
 fn lex_number(input: &str, bytes: &[u8], start: usize, len: usize) -> (Token, usize) {
     let mut i = start + 1;
-    
+
     // Integer part
     while i < len && (bytes[i] as char).is_ascii_digit() {
         i += 1;
     }
-    
+
     // Decimal part (only if followed by digit, not method call like 3.14 vs obj.method)
     if i < len && (bytes[i] as char) == '.' {
         if i + 1 < len && (bytes[i + 1] as char).is_ascii_digit() {
@@ -259,7 +266,7 @@ fn lex_number(input: &str, bytes: &[u8], start: usize, len: usize) -> (Token, us
             }
         }
     }
-    
+
     let text = &input[start..i];
     (Token::Number(text.to_string()), i)
 }

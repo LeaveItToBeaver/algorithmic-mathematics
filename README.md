@@ -1,4 +1,4 @@
-# amlang — Algorithmic Mathematics
+In in# amlang — Algorithmic Mathematics
 
 Algorithmic Mathematics (AM) treats **algorithms and conditional logic as first‑class mathematical objects**. Instead of hunting for a single closed‑form formula, AM lets you write an *adaptive* specification: explicit case analysis, recursion, and composition are part of the mathematics, not afterthoughts.
 

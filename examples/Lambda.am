@@ -1,0 +1,78 @@
+// Higher-Order Functions Example
+// Demonstrates lambdas and functions as first-class values
+
+// =====================================================
+// Basic Lambda Syntax
+// =====================================================
+
+// Lambda with one parameter: \x -> body
+@double(n) := (\x -> x * 2)(n)
+
+// Lambda with multiple parameters: \x, y -> body
+@add(a, b) := (\x, y -> x + y)(a, b)
+
+// =====================================================
+// Higher-Order Functions
+// =====================================================
+
+// Apply a function to a value
+@apply(f, x) := f(x)
+
+// Apply a function twice
+@apply_twice(f, x) := f(f(x))
+
+// Compose two functions: (g ∘ f)(x) = g(f(x))
+@compose(f, g, x) := g(f(x))
+
+// Flip the arguments of a two-argument function
+@flip(f, a, b) := f(b, a)
+
+// Create a constant function that always returns v
+@const(v, _) := v
+
+// Create an identity function
+@id(x) := x
+
+// =====================================================
+// Currying (Partial Application)
+// =====================================================
+
+// Add n to any number (returns a function)
+@add_n(n) := \x -> x + n
+
+// Multiply by n
+@mult_n(n) := \x -> x * n
+
+// Test partial application
+@test_add_5() := @apply(@add_n(5), 10)
+@test_mult_3() := @apply(@mult_n(3), 7)
+
+// =====================================================
+// Fixed Point / Recursion with Lambdas
+// =====================================================
+
+// Factorial using recursion
+@factorial(n) :=
+    match n <= 1 with
+    | true -> 1
+    | false -> n * @factorial(n - 1)
+    end
+
+// Fibonacci 
+@fib(n) :=
+    match n <= 1 with
+    | true -> n
+    | false -> @fib(n - 1) + @fib(n - 2)
+    end
+
+// =====================================================
+// Tests
+// =====================================================
+
+@test_double() := @double(21)
+@test_add() := @add(40, 2)
+@test_apply() := @apply(\x -> x * x, 5)
+@test_apply_twice() := @apply_twice(\x -> x + 1, 0)
+@test_compose() := @compose(\x -> x + 1, \x -> x * 2, 5)
+@test_factorial() := @factorial(5)
+@test_fib() := @fib(10)

@@ -36,6 +36,72 @@ pub enum Expr {
     Set(Vec<Expr>),
     /// List literal: `[1, 2, 3]` - but we use `list(1, 2, 3)` since [] is for case
     List(Vec<Expr>),
+    
+    // === NEW: Lambdas ===
+    /// Lambda expression: `\x -> x + 1` or `\x, y -> x + y`
+    Lambda {
+        params: Vec<String>,
+        body: Box<Expr>,
+    },
+    /// Apply a lambda or function value to arguments
+    Apply {
+        func: Box<Expr>,
+        args: Vec<Expr>,
+    },
+    
+    // === NEW: ADT Constructors ===
+    /// Constructor application: `Some(5)`, `Cons(1, Nil)`
+    Constructor {
+        name: String,
+        args: Vec<Expr>,
+    },
+    
+    // === NEW: Pattern Matching ===
+    /// Match expression: `match e with | Pat1 -> e1 | Pat2 -> e2 end`
+    Match {
+        scrutinee: Box<Expr>,
+        arms: Vec<MatchArm>,
+    },
+    
+    // === NEW: IO Operations ===
+    /// Print expression (returns Unit, side effect)
+    Print(Box<Expr>),
+    /// Read file contents
+    ReadFile(Box<Expr>),
+    /// Write to file
+    WriteFile {
+        path: Box<Expr>,
+        content: Box<Expr>,
+    },
+}
+
+/// A single arm in a match expression
+#[derive(Debug, Clone)]
+pub struct MatchArm {
+    pub pattern: Pattern,
+    pub body: Expr,
+}
+
+/// Patterns for matching
+#[derive(Debug, Clone)]
+pub enum Pattern {
+    /// Wildcard: `_`
+    Wildcard,
+    /// Variable binding: `x`
+    Var(String),
+    /// Literal number: `0`, `42`
+    Number(f64),
+    /// Literal bool: `true`, `false`
+    Bool(bool),
+    /// Literal string: `"hello"`
+    String(String),
+    /// Constructor pattern: `Some(x)`, `Cons(h, t)`
+    Constructor {
+        name: String,
+        args: Vec<Pattern>,
+    },
+    /// Tuple pattern: `(x, y)`
+    Tuple(Vec<Pattern>),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -74,6 +140,7 @@ pub enum Type {
     Rational,     // Q or ℚ
     Complex,      // C or ℂ
     Bool,         // Bool
+    Unit,         // Unit / () - for IO operations that return nothing
 
     /// Parameterized types
     Set(Box<Type>),              // Set<T>
@@ -81,12 +148,41 @@ pub enum Type {
     List(Box<Type>),             // List<T>
     Option(Box<Type>),           // Option<T>
     Tuple(Vec<Type>),            // (T1, T2, ...)
+    
+    /// Function type
+    Function {
+        params: Vec<Type>,
+        result: Box<Type>,
+    },
+    
+    /// IO wrapper type
+    IO(Box<Type>),               // IO<T> - effectful computation
 
     /// Vector space with dimension
     VecSpace(Box<Type>, u32), // R^3
 
     /// Named/user-defined types
     Named(String),
+    
+    /// Type variable for generics
+    TypeVar(String),            // T, U, etc.
+}
+
+/// Algebraic Data Type definition
+/// `type Option<T> = None | Some(T)`
+#[derive(Debug, Clone)]
+pub struct TypeDef {
+    pub name: String,
+    pub type_params: Vec<String>,    // e.g., ["T"] for Option<T>
+    pub variants: Vec<Variant>,
+}
+
+/// A variant in an ADT
+/// `Some(T)` or `None`
+#[derive(Debug, Clone)]
+pub struct Variant {
+    pub name: String,
+    pub fields: Vec<Type>,           // empty for nullary constructors like None
 }
 
 /// Optional specification for algorithms
@@ -143,8 +239,8 @@ pub struct ModPath {
 #[derive(Debug, Clone)]
 pub enum TopLevelDecl {
     Definition(AlgorithmDef),
-    Include(String), // path
-                     // Structure/Instance/etc can be added later
+    TypeDef(TypeDef),    // NEW: ADT definitions
+    Include(String),     // path
 }
 
 pub fn show_expr(e: &Expr, indent: usize) {
@@ -205,6 +301,44 @@ pub fn show_expr(e: &Expr, indent: usize) {
             }
             println!("{pad}]");
         }
+        Expr::Lambda { params, body } => {
+            println!("{pad}Lambda({}) ->", params.join(", "));
+            show_expr(body, indent + 1);
+        }
+        Expr::Apply { func, args } => {
+            println!("{pad}Apply");
+            show_expr(func, indent + 1);
+            for a in args {
+                show_expr(a, indent + 1);
+            }
+        }
+        Expr::Constructor { name, args } => {
+            println!("{pad}Constructor {name}");
+            for a in args {
+                show_expr(a, indent + 1);
+            }
+        }
+        Expr::Match { scrutinee, arms } => {
+            println!("{pad}Match");
+            show_expr(scrutinee, indent + 1);
+            for arm in arms {
+                println!("{pad}  | {:?} ->", arm.pattern);
+                show_expr(&arm.body, indent + 2);
+            }
+        }
+        Expr::Print(e) => {
+            println!("{pad}Print");
+            show_expr(e, indent + 1);
+        }
+        Expr::ReadFile(path) => {
+            println!("{pad}ReadFile");
+            show_expr(path, indent + 1);
+        }
+        Expr::WriteFile { path, content } => {
+            println!("{pad}WriteFile");
+            show_expr(path, indent + 1);
+            show_expr(content, indent + 1);
+        }
     }
 }
 
@@ -217,6 +351,7 @@ pub fn show_type(ty: &Type) -> String {
         Type::Rational => "Q".to_string(),
         Type::Complex => "C".to_string(),
         Type::Bool => "Bool".to_string(),
+        Type::Unit => "Unit".to_string(),
         Type::Set(inner) => format!("Set<{}>", show_type(inner)),
         Type::Vec(inner, Some(n)) => format!("Vec<{}, {}>", show_type(inner), n),
         Type::Vec(inner, None) => format!("Vec<{}>", show_type(inner)),
@@ -230,8 +365,18 @@ pub fn show_type(ty: &Type) -> String {
                 .join(", ");
             format!("({})", types_str)
         }
+        Type::Function { params, result } => {
+            let params_str = params
+                .iter()
+                .map(show_type)
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("({}) -> {}", params_str, show_type(result))
+        }
+        Type::IO(inner) => format!("IO<{}>", show_type(inner)),
         Type::VecSpace(base, dim) => format!("{}^{}", show_type(base), dim),
         Type::Named(name) => name.clone(),
+        Type::TypeVar(name) => name.clone(),
     }
 }
 

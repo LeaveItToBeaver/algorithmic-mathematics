@@ -279,6 +279,33 @@ fn collect_reachable_algorithms<'a>(
                     collect_callees(world, algs, x, out);
                 }
             }
+            // New expression types - collect callees from subexpressions
+            Expr::Lambda { body, .. } => {
+                collect_callees(world, algs, body, out);
+            }
+            Expr::Apply { func, args } => {
+                collect_callees(world, algs, func, out);
+                for a in args {
+                    collect_callees(world, algs, a, out);
+                }
+            }
+            Expr::Constructor { args, .. } => {
+                for a in args {
+                    collect_callees(world, algs, a, out);
+                }
+            }
+            Expr::Match { scrutinee, arms } => {
+                collect_callees(world, algs, scrutinee, out);
+                for arm in arms {
+                    collect_callees(world, algs, &arm.body, out);
+                }
+            }
+            Expr::Print(e) => collect_callees(world, algs, e, out),
+            Expr::ReadFile(e) => collect_callees(world, algs, e, out),
+            Expr::WriteFile { path, content } => {
+                collect_callees(world, algs, path, out);
+                collect_callees(world, algs, content, out);
+            }
             Expr::Number(_) | Expr::Bool(_) | Expr::String(_) | Expr::Ident(_) => {}
         }
     }
@@ -548,6 +575,38 @@ fn translate_expr<'a>(
             };
 
             Ok(format!("({f})({})", translated_args.join(", ")))
+        }
+
+        // New expression types - not yet supported in proof mode
+        Expr::Lambda { .. } => {
+            Err("proof mode: lambda expressions not yet supported".to_string())
+        }
+        Expr::Apply { .. } => {
+            Err("proof mode: function application not yet supported".to_string())
+        }
+        Expr::Constructor { name, args } => {
+            // Simple representation for constructors
+            let mut translated_args = Vec::new();
+            for a in args {
+                translated_args.push(translate_expr(world, algs, a, env, out_stmts)?);
+            }
+            if translated_args.is_empty() {
+                Ok(format!("'{name}'"))
+            } else {
+                Ok(format!("('{name}', {})", translated_args.join(", ")))
+            }
+        }
+        Expr::Match { .. } => {
+            Err("proof mode: match expressions not yet supported".to_string())
+        }
+        Expr::Print(_) => {
+            Err("proof mode: print is an IO operation and cannot be proven".to_string())
+        }
+        Expr::ReadFile(_) => {
+            Err("proof mode: read_file is an IO operation and cannot be proven".to_string())
+        }
+        Expr::WriteFile { .. } => {
+            Err("proof mode: write_file is an IO operation and cannot be proven".to_string())
         }
     }
 }

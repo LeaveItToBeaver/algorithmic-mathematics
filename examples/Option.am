@@ -1,0 +1,78 @@
+// Option type - for optional values
+// This is the standard "Maybe" type from functional programming
+
+// Define the Option ADT
+type Option = None | Some(T)
+
+// Unwrap an option with a default value
+@unwrap_or(opt, default) :=
+    match opt with
+    | None -> default
+    | Some(x) -> x
+    end
+
+// Check if option is None
+@is_none(opt) :=
+    match opt with
+    | None -> true
+    | Some(_) -> false
+    end
+
+// Check if option is Some
+@is_some(opt) :=
+    match opt with
+    | None -> false
+    | Some(_) -> true
+    end
+
+// Map a function over an option
+@map(opt, f) :=
+    match opt with
+    | None -> None
+    | Some(x) -> Some(f(x))
+    end
+
+// Flat map (bind/chain) - for option-returning functions
+@and_then(opt, f) :=
+    match opt with
+    | None -> None
+    | Some(x) -> f(x)
+    end
+
+// Filter an option by a predicate
+@filter(opt, pred) :=
+    match opt with
+    | None -> None
+    | Some(x) -> 
+        let passes = pred(x) in
+        match passes with
+        | true -> Some(x)
+        | false -> None
+        end
+    end
+
+// Example: Safe division returns None on division by zero
+@safe_div(a, b) :=
+    match b == 0 with
+    | true -> None
+    | false -> Some(a / b)
+    end
+
+// Example: Chain computations that might fail
+@test_chain() :=
+    // Compute 100 / 10 / 5, safely
+    @unwrap_or(
+        @and_then(
+            @safe_div(100, 10),
+            \x -> @safe_div(x, 5)
+        ),
+        0
+    )
+
+// Tests
+@test_unwrap_some() := @unwrap_or(Some(42), 0)
+@test_unwrap_none() := @unwrap_or(None, 99)
+@test_map_some() := @unwrap_or(@map(Some(5), \x -> x * 2), 0)
+@test_map_none() := @unwrap_or(@map(None, \x -> x * 2), 99)
+@test_safe_div_ok() := @unwrap_or(@safe_div(10, 2), -1)
+@test_safe_div_zero() := @unwrap_or(@safe_div(10, 0), -1)

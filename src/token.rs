@@ -6,14 +6,15 @@ pub enum Token {
     RParen,
     LBracket,
     RBracket,
-    LBrace,      // NEW: '{'
-    RBrace,      // NEW: '}'
+    LBrace,      // '{'
+    RBrace,      // '}'
     Comma,
     Semicolon,
     Underscore,
     Equal,
     Arrow,       // '->'
-    Defines,     // NEW: ':='
+    FatArrow,    // '=>' for lambdas
+    Defines,     // ':='
     Pipe,
     QMark,
     DblPipe,
@@ -33,7 +34,8 @@ pub enum Token {
     EqEq,    // '=='
     Neq,     // '!='
     Percent, // '%'
-    Colon,   // NEW: ':'
+    Colon,   // ':'
+    Backslash, // '\' for lambdas
 
     // literals / names
     Ident(String),
@@ -49,12 +51,18 @@ pub enum Token {
     KwReexport,
     KwInclude,
     KwAs,
-    KwElse,      // NEW: 'else'
-    KwLet,       // NEW: 'let' (already used but not in enum)
-    KwIn,        // NEW: 'in' (for let bindings)
-    KwRequires,  // NEW: 'requires' (for specifications)
-    KwEnsures,   // NEW: 'ensures' (for specifications)
-    KwMod,       // 'mod' keyword (alternative to % for modulo)
+    KwElse,
+    KwLet,
+    KwIn,
+    KwRequires,
+    KwEnsures,
+    KwMod,
+    // NEW: ADT and pattern matching keywords
+    KwType,      // 'type' for ADT definitions
+    KwMatch,     // 'match' for pattern matching
+    KwWith,      // 'with' in match expressions
+    KwEnd,       // 'end' to close match
+    KwFn,        // 'fn' for lambda alternative
 
     // misc
     EOF,

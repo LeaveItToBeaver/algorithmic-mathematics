@@ -1,4 +1,6 @@
-use crate::ast::{AlgorithmDef, BinOp, Expr, Specification, Type, UnOp};
+use crate::ast::{
+    AlgorithmDef, BinOp, Expr, MatchArm, Pattern, Specification, Type, TypeDef, UnOp, Variant,
+};
 use crate::ast::{Import, ModPath, Module, ReexportItem, TopLevelDecl, UseItem};
 use crate::token::{TokSpan, Token, caret_message};
 
@@ -324,6 +326,10 @@ pub fn parse_module(ts: &mut Tokens) -> Module {
                 let d = parse_alg_def(ts);
                 decls.push(TopLevelDecl::Definition(d));
             }
+            Token::KwType => {
+                let d = parse_type_def(ts);
+                decls.push(TopLevelDecl::TypeDef(d));
+            }
             Token::KwInclude => {
                 ts.next();
                 let path = ts.expect_string("include path");
@@ -417,16 +423,29 @@ fn parse_mod_path(ts: &mut Tokens) -> ModPath {
     ModPath { segments: segs }
 }
 
-/* Expr := Let | Case | Pipe
-   Let  := 'let' Ident '=' Expr 'in' Expr
-   Pipe := Or { '>>' Or }       // left-assoc into Expr::Pipe
-   Case := '[' Arm {';' Arm} ']'
-   Arm := Cond ('?' | '->') Expr | ('_' | 'else') ('?' | '->') Expr
+/* Expr := Let | Lambda | Match | Case | Pipe
+   Let    := 'let' Ident '=' Expr 'in' Expr
+   Lambda := '\' Ident {',' Ident} '->' Expr
+           | 'fn' '(' [Ident {',' Ident}] ')' '=>' Expr
+   Match  := 'match' Expr 'with' {'|' Pattern '->' Expr} 'end'
+   Pipe   := Or { '>>' Or }
+   Case   := '[' Arm {';' Arm} ']'
 */
 pub fn parse_expr(ts: &mut Tokens) -> Expr {
     // Let binding has lowest precedence
     if let Some(Token::KwLet) = ts.peek() {
         return parse_let(ts);
+    }
+    // Lambda: \x -> expr or fn(x) => expr
+    if let Some(Token::Backslash) = ts.peek() {
+        return parse_lambda(ts);
+    }
+    if let Some(Token::KwFn) = ts.peek() {
+        return parse_fn_lambda(ts);
+    }
+    // Match expression
+    if let Some(Token::KwMatch) = ts.peek() {
+        return parse_match(ts);
     }
     // Case has the next lowest precedence; check for it explicitly
     if let Some(Token::LBracket) = ts.peek() {
@@ -458,7 +477,7 @@ fn parse_let(ts: &mut Tokens) -> Expr {
 fn parse_set(ts: &mut Tokens) -> Expr {
     ts.expect(&Token::LBrace, "set '{'");
     let mut elements = Vec::new();
-    
+
     if !matches!(ts.peek(), Some(Token::RBrace)) {
         elements.push(parse_expr(ts));
         while ts.eat(&Token::Comma) {
@@ -469,9 +488,207 @@ fn parse_set(ts: &mut Tokens) -> Expr {
             elements.push(parse_expr(ts));
         }
     }
-    
+
     ts.expect(&Token::RBrace, "closing '}'");
     Expr::Set(elements)
+}
+
+/// Parse lambda: `\x -> expr` or `\x, y -> expr`
+fn parse_lambda(ts: &mut Tokens) -> Expr {
+    ts.expect(&Token::Backslash, "lambda '\\'");
+    let params = parse_lambda_params(ts);
+    ts.expect(&Token::Arrow, "'->' in lambda");
+    let body = parse_expr(ts);
+    Expr::Lambda {
+        params,
+        body: Box::new(body),
+    }
+}
+
+/// Parse fn-style lambda: `fn(x) => expr` or `fn(x, y) => expr`
+fn parse_fn_lambda(ts: &mut Tokens) -> Expr {
+    ts.expect(&Token::KwFn, "'fn' keyword");
+    ts.expect(&Token::LParen, "'(' in fn");
+    let params = parse_lambda_params(ts);
+    ts.expect(&Token::RParen, "')' in fn");
+    ts.expect(&Token::FatArrow, "'=>' in fn");
+    let body = parse_expr(ts);
+    Expr::Lambda {
+        params,
+        body: Box::new(body),
+    }
+}
+
+/// Parse comma-separated identifiers for lambda parameters
+fn parse_lambda_params(ts: &mut Tokens) -> Vec<String> {
+    let mut params = Vec::new();
+    if let Some(Token::Ident(_)) = ts.peek() {
+        params.push(ts.expect_ident("lambda parameter"));
+        while ts.eat(&Token::Comma) {
+            if matches!(ts.peek(), Some(Token::Arrow) | Some(Token::RParen)) {
+                break; // trailing comma
+            }
+            params.push(ts.expect_ident("lambda parameter"));
+        }
+    }
+    params
+}
+
+/// Parse match expression: `match expr with | Pat -> e1 | Pat2 -> e2 end`
+fn parse_match(ts: &mut Tokens) -> Expr {
+    ts.expect(&Token::KwMatch, "'match' keyword");
+    let scrutinee = parse_expr(ts);
+    ts.expect(&Token::KwWith, "'with' in match");
+
+    let mut arms = Vec::new();
+    while ts.eat(&Token::Pipe) {
+        let pattern = parse_pattern(ts);
+        ts.expect(&Token::Arrow, "'->' in match arm");
+        let body = parse_expr(ts);
+        arms.push(MatchArm { pattern, body });
+    }
+
+    ts.expect(&Token::KwEnd, "'end' to close match");
+
+    Expr::Match {
+        scrutinee: Box::new(scrutinee),
+        arms,
+    }
+}
+
+/// Parse a pattern for match expressions
+fn parse_pattern(ts: &mut Tokens) -> Pattern {
+    match ts.peek().cloned() {
+        // Wildcard: _
+        Some(Token::Ident(s)) if s == "_" => {
+            ts.next();
+            Pattern::Wildcard
+        }
+        // Number literal
+        Some(Token::Number(s)) => {
+            ts.next();
+            let v: f64 = s.parse().unwrap_or(0.0);
+            Pattern::Number(v)
+        }
+        // Boolean literal
+        Some(Token::Bool(b)) => {
+            ts.next();
+            Pattern::Bool(b)
+        }
+        // String literal
+        Some(Token::String(s)) => {
+            ts.next();
+            Pattern::String(s)
+        }
+        // Tuple pattern: (p1, p2, ...)
+        Some(Token::LParen) => {
+            ts.next();
+            let mut pats = Vec::new();
+            if !matches!(ts.peek(), Some(Token::RParen)) {
+                pats.push(parse_pattern(ts));
+                while ts.eat(&Token::Comma) {
+                    if matches!(ts.peek(), Some(Token::RParen)) {
+                        break;
+                    }
+                    pats.push(parse_pattern(ts));
+                }
+            }
+            ts.expect(&Token::RParen, "')' in tuple pattern");
+            Pattern::Tuple(pats)
+        }
+        // Variable binding or Constructor
+        Some(Token::Ident(s)) => {
+            ts.next();
+            // Check if it's a constructor (starts with uppercase) with arguments
+            if is_constructor_name(&s) {
+                if ts.eat(&Token::LParen) {
+                    let mut args = Vec::new();
+                    if !matches!(ts.peek(), Some(Token::RParen)) {
+                        args.push(parse_pattern(ts));
+                        while ts.eat(&Token::Comma) {
+                            if matches!(ts.peek(), Some(Token::RParen)) {
+                                break;
+                            }
+                            args.push(parse_pattern(ts));
+                        }
+                    }
+                    ts.expect(&Token::RParen, "')' in constructor pattern");
+                    Pattern::Constructor { name: s, args }
+                } else {
+                    // Nullary constructor
+                    Pattern::Constructor {
+                        name: s,
+                        args: vec![],
+                    }
+                }
+            } else {
+                // Variable binding (lowercase)
+                Pattern::Var(s)
+            }
+        }
+        other => ts.err_here(&format!("unexpected token in pattern: {:?}", other)),
+    }
+}
+
+/// Check if a name looks like a constructor (starts with uppercase)
+fn is_constructor_name(s: &str) -> bool {
+    s.chars().next().map(|c| c.is_uppercase()).unwrap_or(false)
+}
+
+/// Parse type definition: `type Name<T> = Variant1 | Variant2(T)`
+fn parse_type_def(ts: &mut Tokens) -> TypeDef {
+    ts.expect(&Token::KwType, "'type' keyword");
+    let name = ts.expect_ident("type name");
+
+    // Optional type parameters: <T, U>
+    let type_params = if ts.eat(&Token::Lt) {
+        let mut params = vec![ts.expect_ident("type parameter")];
+        while ts.eat(&Token::Comma) {
+            params.push(ts.expect_ident("type parameter"));
+        }
+        ts.expect(&Token::Gt, "'>' to close type parameters");
+        params
+    } else {
+        vec![]
+    };
+
+    ts.expect(&Token::Equal, "'=' in type definition");
+
+    // Parse variants: Variant1 | Variant2(T) | ...
+    let mut variants = vec![parse_variant(ts)];
+    while ts.eat(&Token::Pipe) {
+        variants.push(parse_variant(ts));
+    }
+
+    TypeDef {
+        name,
+        type_params,
+        variants,
+    }
+}
+
+/// Parse a single variant: `None` or `Some(T)`
+fn parse_variant(ts: &mut Tokens) -> Variant {
+    let name = ts.expect_ident("variant name");
+
+    let fields = if ts.eat(&Token::LParen) {
+        let mut fields = Vec::new();
+        if !matches!(ts.peek(), Some(Token::RParen)) {
+            fields.push(parse_type(ts));
+            while ts.eat(&Token::Comma) {
+                if matches!(ts.peek(), Some(Token::RParen)) {
+                    break;
+                }
+                fields.push(parse_type(ts));
+            }
+        }
+        ts.expect(&Token::RParen, "')' in variant");
+        fields
+    } else {
+        vec![]
+    };
+
+    Variant { name, fields }
 }
 
 fn parse_case(ts: &mut Tokens) -> Expr {
@@ -718,6 +935,23 @@ fn parse_primary(ts: &mut Tokens) -> Expr {
     }
 }
 
+/// Parse a constructor call: `Some(5)`, `Cons(1, tail)`
+fn parse_constructor_call(ts: &mut Tokens, name: String) -> Expr {
+    ts.expect(&Token::LParen, "'(' in constructor");
+    let mut args = Vec::new();
+    if !matches!(ts.peek(), Some(Token::RParen)) {
+        args.push(parse_expr(ts));
+        while ts.eat(&Token::Comma) {
+            if matches!(ts.peek(), Some(Token::RParen)) {
+                break;
+            }
+            args.push(parse_expr(ts));
+        }
+    }
+    ts.expect(&Token::RParen, "')' in constructor");
+    Expr::Constructor { name, args }
+}
+
 fn parse_number(ts: &mut Tokens, s: &str) -> Expr {
     let v: f64 = s
         .parse()
@@ -804,7 +1038,7 @@ fn parse_argument_list(ts: &mut Tokens) -> Vec<Expr> {
     args
 }
 
-fn attach_call_to_node(ts: &mut Tokens, node: Expr, args: Vec<Expr>) -> Expr {
+fn attach_call_to_node(_ts: &mut Tokens, node: Expr, args: Vec<Expr>) -> Expr {
     match node {
         Expr::Ident(name) => Expr::Call {
             is_alg: false,
@@ -818,6 +1052,15 @@ fn attach_call_to_node(ts: &mut Tokens, node: Expr, args: Vec<Expr>) -> Expr {
             name,
             args,
         },
-        other => ts.err_here(&format!("cannot call non-name expression: {:?}", other)),
+        // Lambda application
+        Expr::Lambda { .. } => Expr::Apply {
+            func: Box::new(node),
+            args,
+        },
+        // Any other expression being applied - use Apply
+        other => Expr::Apply {
+            func: Box::new(other),
+            args,
+        },
     }
 }
